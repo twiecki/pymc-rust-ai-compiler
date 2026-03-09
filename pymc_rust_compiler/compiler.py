@@ -1,12 +1,14 @@
-"""Compile a PyMC model to Rust via Claude API.
+"""Compile a PyMC model to Rust via an agentic Claude loop.
 
-The core compilation loop:
-1. Extract model context (params, logp graph, validation points)
-2. Write observed data as exact Rust const arrays (no LLM rounding!)
-3. Send to Claude API to generate Rust logp+gradient code
-4. Build Rust project with generated code
-5. Validate against PyMC reference values
-6. If validation fails, feed errors back to Claude and retry
+Instead of blind retries, the compiler runs Claude as an *agent* with tools:
+- write_rust_code: write generated.rs
+- cargo_build: compile the Rust project
+- validate_logp: check logp+gradient against PyMC reference values
+- read_file: inspect any project file (data.rs, generated.rs, etc.)
+
+The agent iterates autonomously — reading compiler errors, analyzing
+validation mismatches, inspecting data, and fixing code — until the
+model compiles and validates correctly.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import re
 import subprocess
 import tempfile
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -26,16 +28,23 @@ import pymc as pm
 from pymc_rust_compiler.exporter import RustModelExporter
 
 
-SYSTEM_PROMPT = """You are a Rust code generator for Bayesian statistical models.
+SYSTEM_PROMPT = """You are an expert Rust code generator for Bayesian statistical models.
 
-Given a PyMC model definition and its PyTensor computational graph, generate
-a Rust implementation of the log-probability density function (logp) and its
-gradient with respect to all unconstrained parameters.
+You have access to tools to iteratively write, build, and validate Rust code.
+Your workflow:
+1. Analyze the model context (parameter layout, logp graph, validation targets)
+2. Write the Rust code using `write_rust_code`
+3. Build with `cargo_build` — if it fails, read the errors, fix the code, rebuild
+4. Validate with `validate_logp` — if it fails, analyze which terms are wrong, fix, rebuild, revalidate
+5. Iterate until validation passes
+
+You can also use `read_file` to inspect data.rs (pre-generated data arrays),
+the current generated.rs, or any other file in the project.
 
 CRITICAL RULES:
 1. Parameters are in UNCONSTRAINED space (log-transforms for positive parameters)
 2. Include the Jacobian adjustment for any transforms (e.g., +log_sigma for LogTransform)
-3. The gradient must be analytically correct - NUTS relies on this
+3. The gradient must be analytically correct — NUTS relies on this
 4. Include ALL terms in the logp — PyMC includes everything, including -0.5*log(2*pi) and -log(sigma).
    Your output MUST match PyMC's logp exactly. Do NOT drop any terms.
 5. Use efficient single-pass computation where possible
@@ -66,8 +75,13 @@ HalfNormal(x | sigma) with LogTransform (unconstrained param = log_x):
   logp = log(2) - 0.5*log(2*pi) - log(sigma) - 0.5*(x/sigma)^2 + log_x
   d(logp)/d(log_x) = -x^2/sigma^2 + 1
 
-You MUST output a COMPLETE, compilable Rust file (generated.rs). Use this structure:
+DEBUGGING TIPS:
+- If logp is way off, check that you included the observed likelihood (it dominates)
+- If gradient is wrong for a sigma parameter, check N_UNCONSTRAINED vs N_CONSTRAINED
+- Use `read_file` to inspect data.rs to confirm array names and sizes
+- Use `validate_logp` which shows per-RV logp decomposition to isolate which term is wrong
 
+RUST CODE STRUCTURE:
 ```rust
 use std::collections::HashMap;
 use nuts_rs::{CpuLogpFunc, CpuMathError, LogpError, Storable};
@@ -123,6 +137,67 @@ impl CpuLogpFunc for GeneratedLogp {
 ```
 """
 
+# Tool definitions for the Anthropic API
+TOOLS = [
+    {
+        "name": "write_rust_code",
+        "description": (
+            "Write the complete generated.rs Rust file. This overwrites the current file. "
+            "The code must be a complete, compilable Rust module implementing CpuLogpFunc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "description": "Complete Rust source code for generated.rs",
+                },
+            },
+            "required": ["code"],
+        },
+    },
+    {
+        "name": "cargo_build",
+        "description": (
+            "Build the Rust project with `cargo build --release`. "
+            "Returns build output including any compiler errors."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "validate_logp",
+        "description": (
+            "Run the compiled validator against PyMC reference values. "
+            "Returns per-point logp comparison and gradient errors. "
+            "Also shows per-RV logp decomposition to help isolate which term is wrong."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Read a file from the Rust project. Useful for inspecting data.rs "
+            "(pre-generated data arrays), the current generated.rs, Cargo.toml, etc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Relative path within the build directory (e.g., 'src/data.rs', 'src/generated.rs')",
+                },
+            },
+            "required": ["path"],
+        },
+    },
+]
+
 
 @dataclass
 class CompilationResult:
@@ -134,28 +209,47 @@ class CompilationResult:
     n_attempts: int
     build_dir: Path | None
     timings: dict[str, float]
+    n_tool_calls: int = 0
+    conversation_turns: int = 0
 
     @property
     def success(self) -> bool:
         return self.logp_validated
 
 
+@dataclass
+class _AgentState:
+    """Mutable state for the agent loop."""
+
+    build_path: Path
+    ctx: object  # ModelContext
+    messages: list[dict]
+    tool_calls: int = 0
+    builds: int = 0
+    validations: int = 0
+    validated: bool = False
+    timings: dict = field(default_factory=dict)
+
+
 def compile_model(
     model: pm.Model,
     source_code: str | None = None,
     api_key: str | None = None,
-    max_attempts: int = 5,
+    max_turns: int = 30,
     model_name: str = "claude-sonnet-4-20250514",
     build_dir: str | Path | None = None,
     verbose: bool = True,
 ) -> CompilationResult:
-    """Compile a PyMC model to optimized Rust via Claude API.
+    """Compile a PyMC model to optimized Rust via an agentic Claude loop.
+
+    Instead of blind retries, Claude acts as an agent with tools to
+    iteratively write, build, debug, and validate the generated Rust code.
 
     Args:
         model: A PyMC model instance.
         source_code: Optional PyMC source code string for better context.
         api_key: Anthropic API key (or set ANTHROPIC_API_KEY env var).
-        max_attempts: Max retry attempts if validation fails.
+        max_turns: Max agent turns (tool calls) before giving up.
         model_name: Claude model to use.
         build_dir: Where to create the Rust project. Temp dir if None.
         verbose: Print progress.
@@ -170,11 +264,11 @@ def compile_model(
         raise ValueError("No API key provided. Set ANTHROPIC_API_KEY or pass api_key=")
 
     client = anthropic.Anthropic(api_key=api_key)
-    timings = {}
+    timings: dict[str, float] = {}
 
     # Step 1: Extract model context
     if verbose:
-        print("Step 1: Extracting model context...")
+        print("Extracting model context...")
     t0 = time.time()
     exporter = RustModelExporter(model, source_code=source_code)
     ctx = exporter.context
@@ -192,110 +286,326 @@ def compile_model(
 
     _setup_rust_project(build_path, ctx)
 
-    # Step 3: Generation + validation loop
-    rust_code = ""
-    validation_errors: list[str] = []
-    messages = [{"role": "user", "content": prompt}]
+    if verbose:
+        print(f"  Build dir: {build_path}")
 
-    for attempt in range(1, max_attempts + 1):
-        if verbose:
-            print(f"\nStep 2: Generating Rust code (attempt {attempt}/{max_attempts})...")
-
-        t0 = time.time()
-        response = client.messages.create(
-            model=model_name,
-            max_tokens=8192,
-            system=SYSTEM_PROMPT,
-            messages=messages,
-        )
-        rust_code = _extract_rust_code(response.content[0].text)
-        timings[f"generate_{attempt}"] = time.time() - t0
-
-        if verbose:
-            print(f"  Generated {len(rust_code)} chars of Rust code")
-
-        # Write generated code
-        (build_path / "src" / "generated.rs").write_text(rust_code)
-
-        # Step 4: Build
-        if verbose:
-            print("Step 3: Building Rust project...")
-        t0 = time.time()
-        build_ok, build_output = _cargo_build(build_path)
-        timings[f"build_{attempt}"] = time.time() - t0
-
-        if not build_ok:
-            error_msg = f"Build failed:\n{build_output}"
-            validation_errors.append(error_msg)
-            if verbose:
-                print(f"  BUILD FAILED")
-                print(f"  {build_output[:500]}")
-
-            messages.append({"role": "assistant", "content": response.content[0].text})
-            messages.append({
-                "role": "user",
-                "content": f"The code failed to compile. Fix the errors:\n\n```\n{build_output}\n```\n\nGenerate the COMPLETE corrected Rust file.",
-            })
-            continue
-
-        if verbose:
-            print("  Build OK")
-
-        # Step 5: Validate
-        if verbose:
-            print("Step 4: Validating against PyMC reference values...")
-        t0 = time.time()
-        valid, errors = _validate_logp(build_path, ctx)
-        timings[f"validate_{attempt}"] = time.time() - t0
-
-        if valid:
-            if verbose:
-                print("  VALIDATION PASSED!")
-            return CompilationResult(
-                rust_code=rust_code,
-                logp_validated=True,
-                validation_errors=[],
-                n_attempts=attempt,
-                build_dir=build_path,
-                timings=timings,
-            )
-        else:
-            validation_errors.extend(errors)
-            if verbose:
-                print(f"  VALIDATION FAILED:")
-                for e in errors[:3]:
-                    print(f"    {e}")
-
-            messages.append({"role": "assistant", "content": response.content[0].text})
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"The code compiled but produced incorrect values:\n\n"
-                    + "\n".join(errors)
-                    + "\n\nFix the logp and gradient computation. "
-                    "Generate the COMPLETE corrected Rust file."
-                ),
-            })
-
-    return CompilationResult(
-        rust_code=rust_code,
-        logp_validated=False,
-        validation_errors=validation_errors,
-        n_attempts=max_attempts,
-        build_dir=build_path,
+    # Step 3: Run the agent loop
+    state = _AgentState(
+        build_path=build_path,
+        ctx=ctx,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Generate a Rust logp+gradient implementation for this PyMC model.\n\n"
+                "Use your tools to write the code, build it, and validate it. "
+                "Iterate until validation passes.\n\n"
+                f"{prompt}"
+            ),
+        }],
         timings=timings,
     )
 
+    if verbose:
+        print("\nStarting agent loop...")
 
-def _extract_rust_code(response_text: str) -> str:
-    """Extract Rust code from Claude's response."""
-    pattern = r"```rust\s*\n(.*?)```"
-    matches = re.findall(pattern, response_text, re.DOTALL)
-    if matches:
-        return max(matches, key=len)
-    if "fn logp" in response_text and "impl" in response_text:
-        return response_text
-    return response_text
+    for turn in range(max_turns):
+        # Call Claude
+        t0 = time.time()
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=16384,
+            system=SYSTEM_PROMPT,
+            tools=TOOLS,
+            messages=state.messages,
+        )
+        timings[f"api_turn_{turn}"] = time.time() - t0
+
+        # Check stop reason
+        if response.stop_reason == "end_turn":
+            # Agent finished (text response, no more tool calls)
+            if verbose:
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        print(f"  Agent: {block.text[:200]}")
+            break
+
+        if response.stop_reason != "tool_use":
+            if verbose:
+                print(f"  Unexpected stop_reason: {response.stop_reason}")
+            break
+
+        # Process tool calls
+        state.messages.append({"role": "assistant", "content": response.content})
+
+        tool_results = []
+        for block in response.content:
+            if block.type == "text" and block.text.strip() and verbose:
+                print(f"  Agent: {block.text[:200]}")
+            elif block.type == "tool_use":
+                state.tool_calls += 1
+                result = _execute_tool(block.name, block.input, state, verbose)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+
+                # Check if validation passed
+                if state.validated:
+                    break
+
+        state.messages.append({"role": "user", "content": tool_results})
+
+        if state.validated:
+            break
+
+    # Read final generated code
+    gen_path = build_path / "src" / "generated.rs"
+    rust_code = gen_path.read_text() if gen_path.exists() else ""
+
+    validation_errors = []
+    if not state.validated:
+        validation_errors.append(
+            f"Agent did not achieve validation after {state.tool_calls} tool calls"
+        )
+
+    return CompilationResult(
+        rust_code=rust_code,
+        logp_validated=state.validated,
+        validation_errors=validation_errors,
+        n_attempts=state.builds,
+        build_dir=build_path,
+        timings=timings,
+        n_tool_calls=state.tool_calls,
+        conversation_turns=turn + 1 if 'turn' in dir() else 0,
+    )
+
+
+def _execute_tool(
+    name: str, input_data: dict, state: _AgentState, verbose: bool
+) -> str:
+    """Execute a tool and return the result string."""
+    if name == "write_rust_code":
+        return _tool_write_rust_code(input_data, state, verbose)
+    elif name == "cargo_build":
+        return _tool_cargo_build(state, verbose)
+    elif name == "validate_logp":
+        return _tool_validate_logp(state, verbose)
+    elif name == "read_file":
+        return _tool_read_file(input_data, state, verbose)
+    else:
+        return f"Unknown tool: {name}"
+
+
+def _tool_write_rust_code(
+    input_data: dict, state: _AgentState, verbose: bool
+) -> str:
+    """Write the generated.rs file."""
+    code = input_data.get("code", "")
+    if not code:
+        return "Error: no code provided"
+
+    gen_path = state.build_path / "src" / "generated.rs"
+    gen_path.write_text(code)
+
+    if verbose:
+        print(f"  [write_rust_code] Wrote {len(code)} chars to generated.rs")
+
+    return f"Written {len(code)} chars to src/generated.rs"
+
+
+def _tool_cargo_build(state: _AgentState, verbose: bool) -> str:
+    """Build the Rust project."""
+    state.builds += 1
+    t0 = time.time()
+
+    result = subprocess.run(
+        ["cargo", "build", "--release"],
+        cwd=state.build_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    elapsed = time.time() - t0
+    state.timings[f"build_{state.builds}"] = elapsed
+
+    if result.returncode == 0:
+        if verbose:
+            print(f"  [cargo_build] OK ({elapsed:.1f}s)")
+        return f"Build successful ({elapsed:.1f}s)"
+    else:
+        if verbose:
+            print(f"  [cargo_build] FAILED ({elapsed:.1f}s)")
+        # Return compiler errors (truncated to avoid token explosion)
+        errors = result.stderr
+        if len(errors) > 4000:
+            errors = errors[:4000] + "\n... (truncated)"
+        return f"Build FAILED:\n{errors}"
+
+
+def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
+    """Run the compiled validator against PyMC reference values."""
+    state.validations += 1
+    ctx = state.ctx
+
+    binary = state.build_path / "target" / "release" / "validate"
+    if not binary.exists():
+        return "Error: validation binary not found. Run cargo_build first."
+
+    all_points = [("initial", ctx.initial_point)] + [
+        (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
+    ]
+
+    def _flatten(v):
+        if isinstance(v, (list, tuple)):
+            for item in v:
+                yield from _flatten(item)
+        elif hasattr(v, '__iter__') and not isinstance(v, str):
+            for item in v:
+                yield from _flatten(item)
+        else:
+            yield float(v)
+
+    input_lines = []
+    for name, vp in all_points:
+        position = []
+        for param_name in ctx.param_order:
+            val = vp.point[param_name]
+            position.extend(_flatten(val))
+        input_lines.append(",".join(f"{v:.17e}" for v in position))
+
+    stdin_data = "\n".join(input_lines) + "\n"
+
+    try:
+        result = subprocess.run(
+            [str(binary)],
+            input=stdin_data,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        return "Error: validation binary timed out"
+
+    if result.returncode != 0:
+        return f"Error: validator crashed: {result.stderr[:500]}"
+
+    output_lines = [l for l in result.stdout.strip().split("\n") if l]
+
+    if len(output_lines) != len(all_points):
+        return f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
+
+    # Parse results
+    parsed = []
+    for output_line in output_lines:
+        if output_line.startswith("ERROR:"):
+            parsed.append(None)
+        else:
+            values = [float(v) for v in output_line.split(",")]
+            parsed.append((values[0], values[1:]))
+
+    # Build detailed report
+    report_lines = []
+    errors = []
+
+    # Check for constant offset
+    offsets = []
+    for (name, vp), res in zip(all_points, parsed):
+        if res is not None:
+            offsets.append(res[0] - vp.logp)
+
+    mean_offset = 0.0
+    has_constant_offset = False
+    if offsets:
+        mean_offset = sum(offsets) / len(offsets)
+        offset_var = max(abs(o - mean_offset) for o in offsets)
+        has_constant_offset = offset_var < 1.0
+
+    for (name, vp), res in zip(all_points, parsed):
+        if res is None:
+            report_lines.append(f"{name}: ERROR from validator")
+            errors.append(f"{name}: ERROR")
+            continue
+
+        rust_logp, rust_grad = res
+
+        # logp comparison
+        if has_constant_offset:
+            adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(abs(vp.logp), 1.0)
+        else:
+            adjusted_err = abs(rust_logp - vp.logp) / max(abs(vp.logp), 1.0)
+
+        status = "OK" if adjusted_err <= 1e-4 else "MISMATCH"
+        report_lines.append(
+            f"{name}: logp PyMC={vp.logp:.10f} Rust={rust_logp:.10f} "
+            f"rel_err={adjusted_err:.2e} [{status}]"
+        )
+        if adjusted_err > 1e-4:
+            errors.append(
+                f"{name}: logp mismatch: PyMC={vp.logp:.10f}, Rust={rust_logp:.10f}, "
+                f"rel_err={adjusted_err:.2e}"
+            )
+
+        # Per-RV logp decomposition (only for initial point)
+        if name == "initial" and vp.per_rv_logp:
+            report_lines.append("  Per-RV logp (PyMC reference):")
+            for rv_name, rv_logp in vp.per_rv_logp.items():
+                report_lines.append(f"    {rv_name}: {rv_logp:.10f}")
+
+        # Gradient comparison
+        grad_errors = 0
+        for j, (rust_g, pymc_g) in enumerate(zip(rust_grad, vp.dlogp)):
+            grad_err = abs(rust_g - pymc_g) / max(abs(pymc_g), 1.0)
+            if grad_err > 1e-3:
+                grad_errors += 1
+                if grad_errors <= 5:  # Show first 5
+                    errors.append(
+                        f"{name}: gradient[{j}] mismatch: PyMC={pymc_g:.6e}, "
+                        f"Rust={rust_g:.6e}, rel_err={grad_err:.2e}"
+                    )
+        if grad_errors > 0:
+            report_lines.append(f"  {grad_errors} gradient mismatches")
+        else:
+            report_lines.append("  All gradients OK")
+
+    report = "\n".join(report_lines)
+
+    if not errors:
+        state.validated = True
+        if verbose:
+            print(f"  [validate_logp] PASSED!")
+        return f"VALIDATION PASSED!\n\n{report}"
+    else:
+        if verbose:
+            print(f"  [validate_logp] FAILED ({len(errors)} errors)")
+        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(errors)
+
+
+def _tool_read_file(
+    input_data: dict, state: _AgentState, verbose: bool
+) -> str:
+    """Read a file from the build directory."""
+    rel_path = input_data.get("path", "")
+    if not rel_path:
+        return "Error: no path provided"
+
+    file_path = state.build_path / rel_path
+    if not file_path.exists():
+        # List available files
+        available = []
+        for f in state.build_path.rglob("*"):
+            if f.is_file() and "target" not in f.parts:
+                available.append(str(f.relative_to(state.build_path)))
+        return f"File not found: {rel_path}\nAvailable files: {', '.join(available)}"
+
+    content = file_path.read_text()
+    if len(content) > 8000:
+        content = content[:8000] + "\n... (truncated)"
+
+    if verbose:
+        print(f"  [read_file] {rel_path} ({len(content)} chars)")
+
+    return content
 
 
 def _generate_data_rs(ctx) -> str:
@@ -362,6 +672,11 @@ path = "src/validate.rs"
     lib_rs = "pub mod data;\npub mod generated;\n"
     (src_dir / "lib.rs").write_text(lib_rs)
 
+    # Placeholder generated.rs so the project structure is valid
+    (src_dir / "generated.rs").write_text(
+        "// Placeholder — will be overwritten by the agent\n"
+    )
+
     # Validation binary
     validate_rs = """
 use pymc_compiled_model::generated::GeneratedLogp;
@@ -400,119 +715,3 @@ fn main() {
 }
 """
     (src_dir / "validate.rs").write_text(validate_rs)
-
-
-def _cargo_build(build_path: Path) -> tuple[bool, str]:
-    """Build the Rust project."""
-    result = subprocess.run(
-        ["cargo", "build", "--release"],
-        cwd=build_path,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    return result.returncode == 0, result.stderr
-
-
-def _validate_logp(build_path: Path, ctx) -> tuple[bool, list[str]]:
-    """Run the compiled validator against PyMC reference values."""
-    binary = build_path / "target" / "release" / "validate"
-    if not binary.exists():
-        return False, ["Validation binary not found"]
-
-    all_points = [("initial", ctx.initial_point)] + [
-        (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
-    ]
-
-    def _flatten(v):
-        """Recursively flatten nested lists/arrays to scalar floats."""
-        if isinstance(v, (list, tuple)):
-            for item in v:
-                yield from _flatten(item)
-        elif hasattr(v, '__iter__') and not isinstance(v, str):
-            for item in v:
-                yield from _flatten(item)
-        else:
-            yield float(v)
-
-    input_lines = []
-    for name, vp in all_points:
-        position = []
-        for param_name in ctx.param_order:
-            val = vp.point[param_name]
-            position.extend(_flatten(val))
-        input_lines.append(",".join(f"{v:.17e}" for v in position))
-
-    stdin_data = "\n".join(input_lines) + "\n"
-
-    try:
-        result = subprocess.run(
-            [str(binary)],
-            input=stdin_data,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        return False, ["Validation binary timed out"]
-
-    if result.returncode != 0:
-        return False, [f"Validator crashed: {result.stderr[:500]}"]
-
-    errors = []
-    output_lines = [l for l in result.stdout.strip().split("\n") if l]
-
-    if len(output_lines) != len(all_points):
-        return False, [f"Expected {len(all_points)} output lines, got {len(output_lines)}"]
-
-    # Parse all results
-    parsed = []
-    for output_line in output_lines:
-        if output_line.startswith("ERROR:"):
-            parsed.append(None)
-        else:
-            values = [float(v) for v in output_line.split(",")]
-            parsed.append((values[0], values[1:]))
-
-    # Check for constant logp offset (NUTS doesn't care about constant terms)
-    # If logp differs by the same constant across all points, that's fine
-    offsets = []
-    for i, ((name, vp), result) in enumerate(zip(all_points, parsed)):
-        if result is None:
-            errors.append(f"{name}: ERROR")
-            continue
-        rust_logp, _ = result
-        offsets.append(rust_logp - vp.logp)
-
-    if offsets and not any(r is None for r in parsed):
-        mean_offset = sum(offsets) / len(offsets)
-        offset_var = max(abs(o - mean_offset) for o in offsets)
-        has_constant_offset = offset_var < 1.0  # constant offsets are consistent
-
-        for i, ((name, vp), result) in enumerate(zip(all_points, parsed)):
-            if result is None:
-                continue
-            rust_logp, rust_grad = result
-
-            # Check logp (accounting for possible constant offset)
-            if has_constant_offset:
-                adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(abs(vp.logp), 1.0)
-            else:
-                adjusted_err = abs(rust_logp - vp.logp) / max(abs(vp.logp), 1.0)
-
-            if adjusted_err > 1e-4:
-                errors.append(
-                    f"{name}: logp mismatch: PyMC={vp.logp:.10f}, Rust={rust_logp:.10f}, "
-                    f"rel_err={adjusted_err:.2e}"
-                )
-
-            # Gradients must be exact (they drive NUTS)
-            for j, (rust_g, pymc_g) in enumerate(zip(rust_grad, vp.dlogp)):
-                grad_err = abs(rust_g - pymc_g) / max(abs(pymc_g), 1.0)
-                if grad_err > 1e-3:
-                    errors.append(
-                        f"{name}: gradient[{j}] mismatch: PyMC={pymc_g:.6e}, "
-                        f"Rust={rust_g:.6e}, rel_err={grad_err:.2e}"
-                    )
-
-    return len(errors) == 0, errors

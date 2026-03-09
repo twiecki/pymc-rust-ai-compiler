@@ -1,0 +1,15 @@
+[package]
+name = "pymc-compiled-model"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nuts-rs = "0.17"
+nuts-storable = "0.2"
+rand = "0.10"
+thiserror = "2"
+anyhow = "1"
+
+[[bin]]
+name = "validate"
+path = "src/validate.rs"

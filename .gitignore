@@ -8,7 +8,6 @@ pixi.lock
 
 # Rust build artifacts
 target/
-compiled_models/
 
 # Secrets
 .env
