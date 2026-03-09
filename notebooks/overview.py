@@ -241,6 +241,162 @@ def _(ctx, mo):
 @app.cell
 def _(mo):
     mo.md(r"""
+    ## Sampling with nutpie
+
+    Let's actually run the sampler on both models — the linear regression and
+    a hierarchical model. `nutpie` is PyMC's Rust-based NUTS backend.
+    """)
+    return
+
+
+@app.cell
+def _(linreg_model):
+    import pymc as _pm
+
+    linreg_idata = _pm.sample(
+        draws=2000,
+        tune=1000,
+        chains=4,
+        nuts_sampler="nutpie",
+        model=linreg_model,
+        random_seed=42,
+        progressbar=False,
+    )
+    print(f"Sampling done: {linreg_idata.posterior.dims}")
+    return (linreg_idata,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Posterior — Linear Regression
+
+    The true values were `alpha=2.5`, `beta=-1.3`, `sigma=0.8` — marked as
+    reference lines below.
+    """)
+    return
+
+
+@app.cell
+def _(linreg_idata):
+    import arviz as az
+    import matplotlib.pyplot as plt
+
+    az.style.use("arviz-darkgrid")
+    az.plot_trace(linreg_idata, var_names=["alpha", "beta", "sigma"], compact=True)
+    plt.tight_layout()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(linreg_idata):
+    import arviz as az
+    import matplotlib.pyplot as plt
+
+    az.plot_posterior(
+        linreg_idata,
+        var_names=["alpha", "beta", "sigma"],
+        ref_val={"alpha": 2.5, "beta": -1.3, "sigma": 0.8},
+    )
+    plt.tight_layout()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Hierarchical Model
+
+    Non-centered parameterization with 8 groups — the harder test case.
+    """)
+    return
+
+
+@app.cell
+def _():
+    import numpy as _np
+    import pymc as _pm
+
+    _np.random.seed(123)
+    n_groups = 8
+    n_per_group = 20
+    _N = n_groups * n_per_group
+
+    true_mu_a, true_sigma_a = 3.0, 1.5
+    true_b, true_sigma_y = -0.8, 0.5
+
+    group_idx = _np.repeat(_np.arange(n_groups), n_per_group)
+    true_a = _np.random.normal(true_mu_a, true_sigma_a, n_groups)
+    x_h = _np.random.uniform(0, 1, _N)
+    y_h = true_a[group_idx] + true_b * x_h + _np.random.normal(0, true_sigma_y, _N)
+
+    with _pm.Model() as hierarchical_model:
+        mu_a = _pm.Normal("mu_a", mu=0, sigma=10)
+        sigma_a = _pm.HalfNormal("sigma_a", sigma=5)
+        a_offset = _pm.Normal("a_offset", mu=0, sigma=1, shape=n_groups)
+        a = mu_a + sigma_a * a_offset
+        b = _pm.Normal("b", mu=0, sigma=10)
+        sigma_y = _pm.HalfNormal("sigma_y", sigma=5)
+        _pm.Normal("y_obs", mu=a[group_idx] + b * x_h, sigma=sigma_y, observed=y_h)
+
+    print(f"Hierarchical model: {len(hierarchical_model.free_RVs)} free params, "
+          f"{_N} observations, {n_groups} groups")
+    return (hierarchical_model,)
+
+
+@app.cell
+def _(hierarchical_model):
+    import pymc as _pm
+
+    hier_idata = _pm.sample(
+        draws=2000,
+        tune=1000,
+        chains=4,
+        nuts_sampler="nutpie",
+        model=hierarchical_model,
+        random_seed=42,
+        progressbar=False,
+    )
+    print(f"Sampling done: {hier_idata.posterior.dims}")
+    return (hier_idata,)
+
+
+@app.cell
+def _(hier_idata):
+    import arviz as az
+    import matplotlib.pyplot as plt
+
+    az.plot_posterior(
+        hier_idata,
+        var_names=["mu_a", "sigma_a", "b", "sigma_y"],
+        ref_val={"mu_a": 3.0, "sigma_a": 1.5, "b": -0.8, "sigma_y": 0.5},
+    )
+    plt.tight_layout()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(hier_idata):
+    import arviz as az
+    import matplotlib.pyplot as plt
+
+    az.plot_forest(
+        hier_idata,
+        var_names=["a_offset"],
+        combined=True,
+    )
+    plt.suptitle("Group-level offsets (a_offset)", y=1.02)
+    plt.tight_layout()
+    plt.gcf()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
     ## Hierarchical Models: The Hard Part
 
     The real test is multi-level models with group indexing. Consider this non-centered
@@ -313,22 +469,6 @@ def _(mo):
        precision — the LLM only generates the *logic*, never touches the numbers
 
     5. **The reward is huge**: pure Rust logp+gradient means no GIL, no Python overhead,
-       no autograd tape — just raw math at native speed## Why This Works
-
-    1. **`pm.Model()` is self-describing**: parameters, transforms, shapes, the full
-       logp computation graph — it's all there, no instrumentation needed
-
-    2. **LLMs are good at code generation**: given the right context (computational graph,
-       parameter layout, data mapping, validation targets), Claude reliably generates
-       correct logp + gradient code
-
-    3. **Validation closes the loop**: if the generated code is wrong, we know immediately
-       (logp/gradient mismatch) and can retry with error feedback
-
-    4. **Data separation**: observed data and covariates live in `data.rs` with full f64
-       precision — the LLM only generates the *logic*, never touches the numbers
-
-    5. **The reward is huge**: pure Rust logp+gradient means no GIL, no Python overhead,
        no autograd tape — just raw math at native speed
     """)
     return
@@ -338,21 +478,6 @@ def _(mo):
 def _(mo):
     mo.md(r"""
     ## Try It
-
-    ```python
-    from pymc_rust_compiler import compile_model
-
-    result = compile_model(
-        model,
-        source_code="...",       # optional but helps
-        build_dir="compiled/",   # where to put the Rust project
-        verbose=True,
-    )
-
-    if result.success:
-        print(f"Done in {result.n_attempts} attempt(s)!")
-        # Run: cargo run --release --bin sample
-    ```## Try It
 
     ```python
     from pymc_rust_compiler import compile_model
