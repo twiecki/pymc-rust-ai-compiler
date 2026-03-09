@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+import ctypes
 import subprocess
 import time
 from pathlib import Path
 
+import numba
 import numpy as np
 import pymc as pm
 from pymc.blocking import DictToArrayBijection, RaveledVars
 from pymc.model.transform.optimization import freeze_dims_and_data
+
+# Path to the bench_runner shared library
+_BENCH_RUNNER_DIR = Path(__file__).resolve().parent.parent / "bench_runner"
 
 
 def benchmark_nutpie(model: pm.Model, draws: int = 2000, tune: int = 1000, chains: int = 4) -> dict:
@@ -94,13 +99,11 @@ def _make_test_point(model: pm.Model, rng: np.random.Generator | None = None) ->
     return rng.standard_normal(x0.shape).astype(x0.dtype)
 
 
-def benchmark_logp_pytensor(
-    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
-) -> dict:
-    """Benchmark PyTensor's compiled logp+dlogp function (what nutpie calls).
+def _prepare_frozen_inputs(model, x0_model_order=None):
+    """Prepare frozen model, jit_fn, and reordered x0.
 
-    Calls the numba jit_fn directly to avoid Python wrapper overhead,
-    giving a fair apples-to-apples comparison against the Rust implementation.
+    Shared setup for benchmark_logp_pytensor and benchmark_logp_numba_cfunc.
+    Returns (jit_fn, x0, frozen_rv, model_fn).
     """
     frozen_model = freeze_dims_and_data(model)
     logp_dlogp_wrapper = frozen_model.logp_dlogp_function(ravel_inputs=True, mode="NUMBA")
@@ -110,11 +113,8 @@ def benchmark_logp_pytensor(
     ip = model.initial_point()
     frozen_vars = [v.name for v in logp_dlogp_wrapper._grad_vars]
 
-    # Build model-order point_map_info for reordering dlogp later
     model_fn = model.logp_dlogp_function(ravel_inputs=True)
-    model_vars = [v.name for v in model_fn._grad_vars]
 
-    # Use provided x0 (model order) or generate a random one
     if x0_model_order is None:
         x0_model_order = _make_test_point(model)
 
@@ -130,6 +130,29 @@ def benchmark_logp_pytensor(
     logp_dlogp_fn(x0)
     jit_fn = logp_dlogp_fn.vm.jit_fn
 
+    return jit_fn, x0, frozen_rv, model_fn
+
+
+def _reorder_dlogp(dlogp_val, frozen_rv, model_fn):
+    """Reorder dlogp from frozen order → model (= Rust) variable order."""
+    dlogp_dict = DictToArrayBijection.rmap(
+        RaveledVars(np.asarray(dlogp_val, dtype=np.float64), frozen_rv.point_map_info)
+    )
+    return DictToArrayBijection.map(
+        {v.name: dlogp_dict[v.name] for v in model_fn._grad_vars}
+    ).data
+
+
+def benchmark_logp_pytensor(
+    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
+) -> dict:
+    """Benchmark PyTensor's compiled logp+dlogp function (what nutpie calls).
+
+    Calls the numba jit_fn directly to avoid Python wrapper overhead,
+    giving a fair apples-to-apples comparison against the Rust implementation.
+    """
+    jit_fn, x0, frozen_rv, model_fn = _prepare_frozen_inputs(model, x0_model_order)
+
     # Warmup the direct path
     for _ in range(200):
         jit_fn(x0)
@@ -142,13 +165,7 @@ def benchmark_logp_pytensor(
 
     us_per_eval = (elapsed / n_evals) * 1e6
 
-    # Reorder dlogp from frozen order → model (= Rust) variable order
-    dlogp_dict = DictToArrayBijection.rmap(
-        RaveledVars(np.asarray(dlogp_val, dtype=np.float64), frozen_rv.point_map_info)
-    )
-    dlogp_val = DictToArrayBijection.map(
-        {v.name: dlogp_dict[v.name] for v in model_fn._grad_vars}
-    ).data
+    dlogp_val = _reorder_dlogp(dlogp_val, frozen_rv, model_fn)
 
     return {
         "backend": "pytensor (numba)",
@@ -156,6 +173,110 @@ def benchmark_logp_pytensor(
         "elapsed_s": elapsed,
         "us_per_eval": us_per_eval,
         "logp": float(logp_val),
+        "dlogp": dlogp_val,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Numba cfunc benchmark: Rust calling Numba via C function pointer (like nutpie)
+# ---------------------------------------------------------------------------
+
+def _build_bench_runner() -> ctypes.CDLL:
+    """Build and load the bench_runner shared library."""
+    so_path = _BENCH_RUNNER_DIR / "target" / "release" / "libbench_runner.so"
+    if not so_path.exists():
+        print("  Building bench_runner shared library...")
+        subprocess.run(
+            ["cargo", "build", "--release"],
+            cwd=_BENCH_RUNNER_DIR,
+            capture_output=True,
+            check=True,
+        )
+    lib = ctypes.CDLL(str(so_path))
+    lib.bench_logp_cfunc.restype = ctypes.c_double
+    lib.bench_logp_cfunc.argtypes = [
+        ctypes.c_size_t,     # func_ptr (usize)
+        ctypes.c_uint64,     # dim
+        ctypes.c_void_p,     # x_ptr
+        ctypes.c_uint64,     # n_warmup
+        ctypes.c_uint64,     # n_iters
+        ctypes.c_void_p,     # logp_out
+        ctypes.c_void_p,     # grad_out
+    ]
+    return lib
+
+
+def _make_numba_cfunc(jit_fn, n_dim: int):
+    """Wrap a PyTensor Numba jit_fn in a C-callable function, like nutpie does.
+
+    Returns a numba CFunc whose .address is a raw C function pointer that Rust
+    can call directly with zero Python overhead.
+    """
+    c_sig = numba.types.int64(
+        numba.types.uint64,                          # dim
+        numba.types.CPointer(numba.types.float64),   # x (input)
+        numba.types.CPointer(numba.types.float64),   # grad (output)
+        numba.types.CPointer(numba.types.float64),   # logp (output)
+    )
+
+    @numba.cfunc(c_sig)
+    def logp_cfunc(dim, x_ptr, grad_ptr, logp_ptr):
+        x = numba.carray(x_ptr, (dim,))
+        logp_val, grad_val = jit_fn(x)
+        logp_out = numba.carray(logp_ptr, (1,))
+        grad_out = numba.carray(grad_ptr, (dim,))
+        logp_out[0] = logp_val
+        grad_out[:] = grad_val
+        return 0
+
+    return logp_cfunc
+
+
+def benchmark_logp_numba_cfunc(
+    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
+) -> dict:
+    """Benchmark Numba logp+dlogp called from Rust via C function pointer.
+
+    This replicates how nutpie actually calls PyTensor's compiled logp:
+    Rust receives a C function pointer from numba.cfunc and calls it directly,
+    with zero Python interpreter overhead.
+    """
+    jit_fn, x0, frozen_rv, model_fn = _prepare_frozen_inputs(model, x0_model_order)
+
+    # Create C-callable wrapper (like nutpie does)
+    n_dim = len(x0)
+    print(f"  Compiling numba cfunc wrapper (dim={n_dim})...")
+    cfunc = _make_numba_cfunc(jit_fn, n_dim)
+
+    # Load Rust bench runner
+    lib = _build_bench_runner()
+
+    # Prepare buffers
+    x_arr = np.ascontiguousarray(x0, dtype=np.float64)
+    logp_arr = np.zeros(1, dtype=np.float64)
+    grad_arr = np.zeros(n_dim, dtype=np.float64)
+
+    # Call Rust: it calls the Numba cfunc in a tight loop
+    us_per_eval = lib.bench_logp_cfunc(
+        cfunc.address,
+        n_dim,
+        x_arr.ctypes.data,
+        200,       # warmup
+        n_evals,
+        logp_arr.ctypes.data,
+        grad_arr.ctypes.data,
+    )
+
+    elapsed = us_per_eval * n_evals / 1e6
+
+    dlogp_val = _reorder_dlogp(grad_arr, frozen_rv, model_fn)
+
+    return {
+        "backend": "numba cfunc (rust loop)",
+        "n_evals": n_evals,
+        "elapsed_s": elapsed,
+        "us_per_eval": us_per_eval,
+        "logp": float(logp_arr[0]),
         "dlogp": dlogp_val,
     }
 
