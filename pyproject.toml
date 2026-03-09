@@ -9,6 +9,7 @@ dependencies = [
     "nutpie>=0.16",
     "anthropic>=0.52",
     "numpy",
+    "marimo>=0.20.4",
 ]
 
 [project.optional-dependencies]

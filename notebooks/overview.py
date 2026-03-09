@@ -1,0 +1,368 @@
+import marimo
+
+__generated_with = "0.13.0"
+app = marimo.App(width="medium")
+
+
+@app.cell
+def _():
+    import marimo as mo
+    return (mo,)
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    # PyMC → Rust AI Compiler
+
+    **Compile PyMC models to optimized Rust via Claude API — automatically.**
+
+    This project takes a standard `pm.Model()`, extracts everything the LLM needs
+    (parameters, transforms, computational graph, validation data), sends it to Claude,
+    and gets back a complete, validated Rust implementation of `logp` + gradients.
+
+    The generated Rust code implements the `CpuLogpFunc` trait from
+    [`nuts-rs`](https://github.com/pymc-devs/nuts-rs), so it plugs directly into
+    the NUTS sampler — no Python overhead during sampling.
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## How It Works
+
+    ```
+    ┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
+    │  pm.Model()  │────▶│   Exporter    │────▶│  Claude API  │────▶│  Rust Code   │
+    │              │     │              │     │              │     │              │
+    │ - free_RVs   │     │ - params     │     │ - system     │     │ - logp()     │
+    │ - transforms │     │ - logp graph │     │   prompt     │     │ - gradient   │
+    │ - logp()     │     │ - data       │     │ - model      │     │ - CpuLogpFunc│
+    │ - observed   │     │ - test pts   │     │   context    │     │   trait impl  │
+    └─────────────┘     └──────────────┘     └─────────────┘     └──────┬───────┘
+                                                                        │
+                                              ┌──────────────┐          │
+                                              │   Validate    │◀────────┘
+                                              │              │
+                                              │ logp match?  │──── yes ──▶ Done!
+                                              │ grad match?  │──── no ───▶ Retry with
+                                              └──────────────┘            error feedback
+    ```
+
+    **Key insight**: `pm.Model()` already contains *everything* needed — parameters,
+    transforms, shapes, the full computational graph, and logp functions.
+    We just need to read it out and present it to the LLM in the right format.
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Step 1: Define a PyMC Model
+
+    Nothing special needed — just a standard PyMC model. Here's a linear regression:
+    """
+    )
+    return
+
+
+@app.cell
+def _():
+    import numpy as np
+    import pymc as pm
+
+    # Generate synthetic data
+    np.random.seed(42)
+    N = 200
+    true_alpha, true_beta, true_sigma = 2.5, -1.3, 0.8
+
+    x_data = np.linspace(0, 1, N)
+    y_data = true_alpha + true_beta * x_data + np.random.normal(0, true_sigma, N)
+
+    with pm.Model() as linreg_model:
+        alpha = pm.Normal("alpha", mu=0, sigma=10)
+        beta = pm.Normal("beta", mu=0, sigma=10)
+        sigma = pm.HalfNormal("sigma", sigma=5)
+        mu = alpha + beta * x_data
+        y = pm.Normal("y", mu=mu, sigma=sigma, observed=y_data)
+
+    print(f"Model: {len(linreg_model.free_RVs)} free parameters, "
+          f"{len(linreg_model.observed_RVs)} observed")
+    print(f"Parameters: {[rv.name for rv in linreg_model.free_RVs]}")
+    print(f"Transforms: {[type(linreg_model.rvs_to_transforms.get(rv)).__name__ for rv in linreg_model.free_RVs]}")
+    return (linreg_model, x_data)
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Step 2: Extract Model Context
+
+    The `RustModelExporter` reads the PyMC model and extracts:
+
+    - **Parameter layout**: names, transforms, shapes, position in the unconstrained vector
+    - **Computational graph**: PyTensor's `debugprint` of the full logp
+    - **Observed data**: `y` values with exact f64 precision
+    - **Covariate data**: `x` arrays, group indices, etc.
+    - **Validation points**: logp + gradient values at multiple test points
+    """
+    )
+    return
+
+
+@app.cell
+def _(linreg_model, x_data):
+    from pymc_rust_compiler.exporter import RustModelExporter
+
+    SOURCE = """alpha ~ Normal(0, 10)
+    beta ~ Normal(0, 10)
+    sigma ~ HalfNormal(5)
+    y ~ Normal(alpha + beta * x, sigma), observed"""
+
+    exporter = RustModelExporter(linreg_model, source_code=SOURCE)
+    ctx = exporter.context
+
+    print(f"Parameters ({ctx.n_params} unconstrained):")
+    for p in ctx.params:
+        transform_str = f" [{p.transform}]" if p.transform else ""
+        print(f"  {p.name}: shape={p.shape}, size={p.size}{transform_str}")
+
+    print(f"\nObserved data:")
+    for name, info in ctx.observed_data.items():
+        print(f"  {name}: n={info['n']}, range=[{info['min']:.3f}, {info['max']:.3f}]")
+
+    print(f"\nCovariates:")
+    for name, info in ctx.covariate_data.items():
+        is_idx = info.get("is_index_array", False)
+        label = f" [INDEX ARRAY, {info['n_groups']} groups]" if is_idx else ""
+        print(f"  {name}: n={info['n']}, range=[{info['min']:.3f}, {info['max']:.3f}]{label}")
+
+    print(f"\nValidation points: 1 initial + {len(ctx.extra_points)} extra")
+    print(f"  Initial logp = {ctx.initial_point.logp:.6f}")
+    return (ctx, exporter)
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Step 3: The LLM Prompt
+
+    Everything gets assembled into a single prompt for Claude. It includes:
+
+    1. The PyMC source code
+    2. Parameter layout (which index maps to which parameter)
+    3. Data constants available in `data.rs`
+    4. The full PyTensor computational graph
+    5. Exact validation values the generated code must match
+    """
+    )
+    return
+
+
+@app.cell
+def _(exporter, mo):
+    prompt = exporter.to_prompt()
+    # Show first ~2000 chars
+    preview = prompt[:2000] + "\n\n... [truncated] ...\n"
+
+    mo.md(f"**Prompt length**: {len(prompt):,} characters\n\n```\n{preview}\n```")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Step 4: Generated Rust Code
+
+    Claude generates a complete Rust file implementing `CpuLogpFunc`.
+    Here's what the linear regression output looks like:
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    with open("compiled_models/linreg/src/generated.rs") as f:
+        rust_code = f.read()
+
+    mo.md(f"```rust\n{rust_code}\n```")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    Notice:
+
+    - **Single-pass computation**: residuals, their sum, and sum-of-squares are
+      accumulated in one loop — cache-friendly, no extra allocations
+    - **Analytical gradients**: no autograd overhead, every derivative is hand-derived
+    - **Transform handling**: `sigma` lives in log-space (`sigma_log = position[2]`),
+      with the Jacobian adjustment `+ sigma_log` added to logp
+    - **Data from `data.rs`**: the `Y_DATA` and `X_0_DATA` arrays are pre-generated
+      with full f64 precision — the LLM never sees or rounds the actual numbers
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Step 5: Validation
+
+    Before declaring success, the compiled binary is tested against PyMC reference values:
+
+    - **logp**: must match within `rel_err < 1e-4` (constant offsets are OK since NUTS doesn't care)
+    - **gradients**: must match within `rel_err < 1e-3` (NUTS depends on correct gradients)
+
+    If validation fails, the errors are fed back to Claude for a retry (up to 3 attempts).
+    """
+    )
+    return
+
+
+@app.cell
+def _(ctx, mo):
+    rows = []
+    rows.append("| Point | PyMC logp | Gradient[0] | Gradient[1] | Gradient[2] |")
+    rows.append("|-------|-----------|-------------|-------------|-------------|")
+
+    pts = [("initial", ctx.initial_point)] + [(f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)]
+    for name, vp in pts:
+        g = vp.dlogp
+        rows.append(
+            f"| {name} | {vp.logp:.4f} | {g[0]:.4f} | {g[1]:.4f} | {g[2]:.4f} |"
+        )
+
+    mo.md("**Validation reference values:**\n\n" + "\n".join(rows))
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Hierarchical Models: The Hard Part
+
+    The real test is multi-level models with group indexing. Consider this non-centered
+    parameterization with 8 groups:
+
+    ```python
+    mu_a ~ Normal(0, 10)
+    sigma_a ~ HalfNormal(5)
+    a_offset ~ Normal(0, 1, shape=8)
+    a = mu_a + sigma_a * a_offset        # deterministic
+    b ~ Normal(0, 10)
+    sigma_y ~ HalfNormal(5)
+    y ~ Normal(a[group_idx] + b * x, sigma_y), observed
+    ```
+
+    **Challenges for the LLM:**
+
+    1. **12 unconstrained parameters** (mu_a, log_sigma_a, 8 offsets, b, log_sigma_y)
+    2. **Group indexing**: `a[group_idx]` requires casting float indices to `usize`
+    3. **Non-centered parameterization**: `a = mu_a + sigma_a * a_offset` means
+       gradients flow through multiple parameters
+    4. **Observed likelihood**: 170 observations contribute the dominant logp term
+
+    The compiler detects integer index arrays automatically and provides explicit
+    mapping hints in the prompt (`group_idx` in source → `X_1_DATA`).
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Architecture
+
+    ```
+    pymc_rust_compiler/
+    ├── exporter.py      # Extract: pm.Model() → ModelContext → LLM prompt
+    ├── compiler.py      # Generate + Build + Validate loop
+    └── benchmark.py     # Compare: nutpie vs AI-compiled Rust
+
+    compiled_models/
+    ├── normal/          # 2 params  → ~100 lines of Rust
+    ├── linreg/          # 3 params  → ~120 lines of Rust
+    └── hierarchical/    # 12 params → ~200 lines of Rust
+    ```
+
+    The generated Rust code implements `CpuLogpFunc` from `nuts-rs`, which means it
+    plugs directly into the same NUTS sampler that `nutpie` uses — but without any
+    Python/PyTensor overhead during sampling.
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Why This Works
+
+    1. **`pm.Model()` is self-describing**: parameters, transforms, shapes, the full
+       logp computation graph — it's all there, no instrumentation needed
+
+    2. **LLMs are good at code generation**: given the right context (computational graph,
+       parameter layout, data mapping, validation targets), Claude reliably generates
+       correct logp + gradient code
+
+    3. **Validation closes the loop**: if the generated code is wrong, we know immediately
+       (logp/gradient mismatch) and can retry with error feedback
+
+    4. **Data separation**: observed data and covariates live in `data.rs` with full f64
+       precision — the LLM only generates the *logic*, never touches the numbers
+
+    5. **The reward is huge**: pure Rust logp+gradient means no GIL, no Python overhead,
+       no autograd tape — just raw math at native speed
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ## Try It
+
+    ```python
+    from pymc_rust_compiler import compile_model
+
+    result = compile_model(
+        model,
+        source_code="...",       # optional but helps
+        build_dir="compiled/",   # where to put the Rust project
+        verbose=True,
+    )
+
+    if result.success:
+        print(f"Done in {result.n_attempts} attempt(s)!")
+        # Run: cargo run --release --bin sample
+    ```
+    """
+    )
+    return
+
+
+if __name__ == "__main__":
+    app.run()
