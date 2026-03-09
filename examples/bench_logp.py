@@ -9,54 +9,53 @@ Usage:
     uv run python examples/bench_logp.py
 """
 
+from pathlib import Path
+
 import numpy as np
 import pymc as pm
 
 from pymc_rust_compiler.benchmark import (
+    _make_test_point,
     benchmark_logp_pytensor,
     benchmark_logp_rust,
     print_logp_comparison,
 )
 
-N_EVALS = 500_000
+N_EVALS = 10_000
 
 
 def make_normal_model():
     """Simple 2-parameter model."""
-    np.random.seed(42)
-    y_obs = np.random.normal(3.0, 1.5, size=100)
+    build_dir = Path("compiled_models/normal")
+    y_obs = np.load(build_dir / "y_data.npy")
     with pm.Model() as model:
         mu = pm.Normal("mu", mu=0, sigma=10)
         sigma = pm.HalfNormal("sigma", sigma=5)
         pm.Normal("y", mu=mu, sigma=sigma, observed=y_obs)
-    return model, "compiled_models/normal"
+    return model, str(build_dir)
 
 
 def make_linreg_model():
     """Linear regression, 3 parameters."""
-    np.random.seed(42)
-    N = 200
-    x = np.random.randn(N)
-    y_obs = 2.5 + 1.3 * x + np.random.normal(0, 0.8, N)
+    build_dir = Path("compiled_models/linreg")
+    y_obs = np.load(build_dir / "y_data.npy")
+    x = np.load(build_dir / "x_0_data.npy")
     with pm.Model() as model:
         alpha = pm.Normal("alpha", mu=0, sigma=10)
         beta = pm.Normal("beta", mu=0, sigma=10)
         sigma = pm.HalfNormal("sigma", sigma=5)
         mu = alpha + beta * x
         pm.Normal("y", mu=mu, sigma=sigma, observed=y_obs)
-    return model, "compiled_models/linreg"
+    return model, str(build_dir)
 
 
 def make_hierarchical_model():
     """Hierarchical model, 12 unconstrained parameters."""
-    np.random.seed(42)
-    n_groups = 8
-    n_per_group = np.random.randint(10, 30, size=n_groups)
-    N = n_per_group.sum()
-    true_a = np.random.normal(1.5, 0.7, n_groups)
-    group_idx = np.repeat(np.arange(n_groups), n_per_group)
-    x = np.random.binomial(1, 0.5, N).astype(float)
-    y_obs = true_a[group_idx] + -0.8 * x + np.random.normal(0, 0.5, N)
+    build_dir = Path("compiled_models/hierarchical")
+    y_obs = np.load(build_dir / "y_data.npy")
+    x = np.load(build_dir / "x_0_data.npy")         # binary covariate
+    group_idx = np.load(build_dir / "x_1_data.npy").astype(int)  # group indices
+    n_groups = int(group_idx.max()) + 1
     with pm.Model() as model:
         mu_a = pm.Normal("mu_a", mu=0, sigma=10)
         sigma_a = pm.HalfNormal("sigma_a", sigma=5)
@@ -66,7 +65,7 @@ def make_hierarchical_model():
         sigma_y = pm.HalfNormal("sigma_y", sigma=5)
         mu_y = a[group_idx] + b * x
         pm.Normal("y", mu=mu_y, sigma=sigma_y, observed=y_obs)
-    return model, "compiled_models/hierarchical"
+    return model, str(build_dir)
 
 
 def main():
@@ -84,13 +83,14 @@ def main():
 
         model, build_dir = make_fn()
         n_evals = N_EVALS
+        x0 = _make_test_point(model)
 
         print(f"  Running {n_evals:,} logp+dlogp evaluations...")
 
-        pt_result = benchmark_logp_pytensor(model, n_evals=n_evals)
+        pt_result = benchmark_logp_pytensor(model, n_evals=n_evals, x0_model_order=x0)
         print(f"    pytensor: {pt_result['us_per_eval']:.2f} us/eval")
 
-        rs_result = benchmark_logp_rust(build_dir, model, n_evals=n_evals)
+        rs_result = benchmark_logp_rust(build_dir, model, n_evals=n_evals, x0_model_order=x0)
         if "error" in rs_result:
             print(f"    rust-ai: ERROR - {rs_result['error'][:100]}")
         else:

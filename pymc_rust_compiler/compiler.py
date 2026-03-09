@@ -751,6 +751,17 @@ path = "src/bench.rs"
     data_rs = _generate_data_rs(ctx)
     (src_dir / "data.rs").write_text(data_rs)
 
+    # Save observed data as .npy for benchmark reproducibility
+    all_data = {}
+    all_data.update(ctx.observed_data)
+    all_data.update(ctx.covariate_data)
+    for name, info in all_data.items():
+        values = info.get("values")
+        if values is not None:
+            import numpy as _np
+
+            _np.save(build_path / f"{name}_data.npy", _np.asarray(values))
+
     # lib.rs to expose modules
     lib_rs = "pub mod data;\npub mod generated;\n"
     (src_dir / "lib.rs").write_text(lib_rs)

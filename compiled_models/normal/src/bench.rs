@@ -1,3 +1,4 @@
+
 use pymc_compiled_model::generated::GeneratedLogp;
 use nuts_rs::CpuLogpFunc;
 use std::io::{self, BufRead};
@@ -35,5 +36,7 @@ fn main() {
 
     let nanos = elapsed.as_nanos() as f64;
     let us_per_eval = nanos / (n_iters as f64) / 1000.0;
-    println!("{:.6},{:.17e}", us_per_eval, logp_val);
+    // Output: us_per_eval,logp,grad[0],grad[1],...
+    let grad_str: Vec<String> = gradient.iter().map(|g| format!("{:.17e}", g)).collect();
+    println!("{:.6},{:.17e},{}", us_per_eval, logp_val, grad_str.join(","));
 }

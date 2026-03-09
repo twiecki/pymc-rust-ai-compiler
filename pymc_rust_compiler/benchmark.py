@@ -6,9 +6,10 @@ import subprocess
 import time
 from pathlib import Path
 
-import arviz as az
 import numpy as np
 import pymc as pm
+from pymc.blocking import DictToArrayBijection, RaveledVars
+from pymc.model.transform.optimization import freeze_dims_and_data
 
 
 def benchmark_nutpie(model: pm.Model, draws: int = 2000, tune: int = 1000, chains: int = 4) -> dict:
@@ -79,57 +80,109 @@ def benchmark_rust(build_dir: str | Path, draws: int = 2000, tune: int = 1000, c
 # logp+dlogp evaluation benchmark (no sampling overhead)
 # ---------------------------------------------------------------------------
 
-def benchmark_logp_pytensor(model: pm.Model, n_evals: int = 100_000) -> dict:
-    """Benchmark PyTensor's compiled logp+dlogp function (what nutpie calls)."""
-    logp_dlogp_fn = model.logp_dlogp_function(ravel_inputs=True)
-    logp_dlogp_fn.set_extra_values({})
+def _make_test_point(model: pm.Model, rng: np.random.Generator | None = None) -> np.ndarray:
+    """Generate a random unconstrained test point in model variable order.
 
-    # Build unconstrained parameter vector from initial point
+    Uses a random point (instead of the initial point) to avoid
+    over-specialising benchmarks on a particular parameter vector.
+    """
+    if rng is None:
+        rng = np.random.default_rng(42)
     ip = model.initial_point()
-    x0 = np.concatenate([np.atleast_1d(ip[v.name]) for v in logp_dlogp_fn._grad_vars])
+    model_fn = model.logp_dlogp_function(ravel_inputs=True)
+    x0 = np.concatenate([np.atleast_1d(ip[v.name]) for v in model_fn._grad_vars])
+    return rng.standard_normal(x0.shape).astype(x0.dtype)
 
-    # Warmup
+
+def benchmark_logp_pytensor(
+    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
+) -> dict:
+    """Benchmark PyTensor's compiled logp+dlogp function (what nutpie calls).
+
+    Calls the numba jit_fn directly to avoid Python wrapper overhead,
+    giving a fair apples-to-apples comparison against the Rust implementation.
+    """
+    frozen_model = freeze_dims_and_data(model)
+    logp_dlogp_wrapper = frozen_model.logp_dlogp_function(ravel_inputs=True, mode="NUMBA")
+    logp_dlogp_fn = logp_dlogp_wrapper._pytensor_function
+    logp_dlogp_fn.trust_input = True
+
+    ip = model.initial_point()
+    frozen_vars = [v.name for v in logp_dlogp_wrapper._grad_vars]
+
+    # Build model-order point_map_info for reordering dlogp later
+    model_fn = model.logp_dlogp_function(ravel_inputs=True)
+    model_vars = [v.name for v in model_fn._grad_vars]
+
+    # Use provided x0 (model order) or generate a random one
+    if x0_model_order is None:
+        x0_model_order = _make_test_point(model)
+
+    # Reorder x0 from model order → frozen order for this function
+    model_ip = {v.name: ip[v.name] for v in model_fn._grad_vars}
+    model_rv = DictToArrayBijection.map(model_ip)
+    x0_dict = DictToArrayBijection.rmap(RaveledVars(x0_model_order, model_rv.point_map_info))
+    frozen_ip = {name: x0_dict[name] for name in frozen_vars}
+    frozen_rv = DictToArrayBijection.map(frozen_ip)
+    x0 = frozen_rv.data
+
+    # Trigger numba compilation via a regular call, then grab the jit_fn
+    logp_dlogp_fn(x0)
+    jit_fn = logp_dlogp_fn.vm.jit_fn
+
+    # Warmup the direct path
     for _ in range(200):
-        logp_dlogp_fn(x0)
+        jit_fn(x0)
 
-    # Timed run
+    # Timed run – call numba directly, no Python wrapper overhead
     start = time.perf_counter()
     for _ in range(n_evals):
-        logp_val, dlogp_val = logp_dlogp_fn(x0)
+        logp_val, dlogp_val = jit_fn(x0)
     elapsed = time.perf_counter() - start
 
     us_per_eval = (elapsed / n_evals) * 1e6
 
+    # Reorder dlogp from frozen order → model (= Rust) variable order
+    dlogp_dict = DictToArrayBijection.rmap(
+        RaveledVars(np.asarray(dlogp_val, dtype=np.float64), frozen_rv.point_map_info)
+    )
+    dlogp_val = DictToArrayBijection.map(
+        {v.name: dlogp_dict[v.name] for v in model_fn._grad_vars}
+    ).data
+
     return {
-        "backend": "pytensor",
+        "backend": "pytensor (numba)",
         "n_evals": n_evals,
         "elapsed_s": elapsed,
         "us_per_eval": us_per_eval,
         "logp": float(logp_val),
+        "dlogp": dlogp_val,
     }
 
 
-def benchmark_logp_rust(build_dir: str | Path, model: pm.Model, n_evals: int = 100_000) -> dict:
+def benchmark_logp_rust(
+    build_dir: str | Path, model: pm.Model, n_evals: int = 10_000,
+    x0_model_order: np.ndarray | None = None,
+) -> dict:
     """Benchmark the AI-compiled Rust logp+dlogp function."""
     build_dir = Path(build_dir).resolve()
     binary = build_dir / "target" / "release" / "bench"
 
-    if not binary.exists():
-        print("  Building Rust bench binary...")
-        result = subprocess.run(
-            ["cargo", "build", "--release", "--bin", "bench"],
-            cwd=build_dir,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            return {"backend": "rust-ai", "error": f"Build failed: {result.stderr[:500]}"}
+    # Always rebuild to pick up bench.rs changes
+    print("  Building Rust bench binary...")
+    result = subprocess.run(
+        ["cargo", "build", "--release", "--bin", "bench"],
+        cwd=build_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return {"backend": "rust-ai", "error": f"Build failed: {result.stderr[:500]}"}
 
-    # Get initial unconstrained point
-    logp_dlogp_fn = model.logp_dlogp_function(ravel_inputs=True)
-    logp_dlogp_fn.set_extra_values({})
-    ip = model.initial_point()
-    x0 = np.concatenate([np.atleast_1d(ip[v.name]) for v in logp_dlogp_fn._grad_vars])
+    # Use provided x0 (model order) or generate a random one
+    if x0_model_order is None:
+        x0_model_order = _make_test_point(model)
+    x0 = x0_model_order
 
     # Prepare stdin: first line = n_iters, second line = param vector
     param_str = ",".join(f"{v:.17e}" for v in x0)
@@ -147,10 +200,11 @@ def benchmark_logp_rust(build_dir: str | Path, model: pm.Model, n_evals: int = 1
     if result.returncode != 0:
         return {"backend": "rust-ai", "error": f"Run failed: {result.stderr[:500]}"}
 
-    # Parse output: us_per_eval,logp
+    # Parse output: us_per_eval,logp,grad[0],grad[1],...
     parts = result.stdout.strip().split(",")
     us_per_eval = float(parts[0])
     logp = float(parts[1])
+    dlogp = np.array([float(v) for v in parts[2:]], dtype=np.float64)
 
     elapsed = us_per_eval * n_evals / 1e6
 
@@ -160,6 +214,7 @@ def benchmark_logp_rust(build_dir: str | Path, model: pm.Model, n_evals: int = 1
         "elapsed_s": elapsed,
         "us_per_eval": us_per_eval,
         "logp": logp,
+        "dlogp": dlogp,
     }
 
 
@@ -175,10 +230,10 @@ def print_logp_comparison(pytensor_result: dict, rust_result: dict, model_name: 
 
     pt = pytensor_result
     if "error" in pt:
-        print(f"{'pytensor':<20} {'ERROR':<12}")
+        print(f"{pt['backend']:<20} {'ERROR':<12}")
     else:
         evals_per_sec_pt = 1e6 / pt["us_per_eval"]
-        print(f"{'pytensor':<20} {pt['us_per_eval']:<12.2f} {evals_per_sec_pt:<14,.0f} {'1.00x':<10}")
+        print(f"{pt['backend']:<20} {pt['us_per_eval']:<12.2f} {evals_per_sec_pt:<14,.0f} {'1.00x':<10}")
 
     rs = rust_result
     if "error" in rs:
@@ -188,12 +243,30 @@ def print_logp_comparison(pytensor_result: dict, rust_result: dict, model_name: 
         speedup = pt["us_per_eval"] / rs["us_per_eval"] if "error" not in pt else 0
         print(f"{'rust-ai':<20} {rs['us_per_eval']:<12.2f} {evals_per_sec_rs:<14,.0f} {speedup:<10.2f}x")
 
-        # Check logp agreement
+        # Check logp and dlogp agreement
         if "error" not in pt:
             logp_diff = abs(pt["logp"] - rs["logp"])
-            rel_err = logp_diff / max(abs(pt["logp"]), 1e-10)
-            status = "MATCH" if rel_err < 1e-4 else f"MISMATCH (rel_err={rel_err:.2e})"
-            print(f"\n  logp check: pytensor={pt['logp']:.8f}  rust={rs['logp']:.8f}  [{status}]")
+            logp_rel_err = logp_diff / max(abs(pt["logp"]), 1e-10)
+            logp_ok = logp_rel_err < 1e-4
+            logp_status = "MATCH" if logp_ok else f"MISMATCH (rel_err={logp_rel_err:.2e})"
+            print(f"\n  logp check:  pytensor={pt['logp']:.8f}  rust={rs['logp']:.8f}  [{logp_status}]")
+
+            pt_dlogp = pt["dlogp"]
+            rs_dlogp = rs["dlogp"]
+            dlogp_abs_err = np.max(np.abs(pt_dlogp - rs_dlogp))
+            dlogp_rel_err = dlogp_abs_err / max(np.max(np.abs(pt_dlogp)), 1e-10)
+            dlogp_ok = dlogp_rel_err < 1e-4
+            dlogp_status = "MATCH" if dlogp_ok else f"MISMATCH (rel_err={dlogp_rel_err:.2e})"
+            print(f"  dlogp check: pytensor={pt_dlogp}  rust={rs_dlogp}  [{dlogp_status}]")
+
+            assert logp_ok, (
+                f"logp mismatch: pytensor={pt['logp']:.10f} rust={rs['logp']:.10f} "
+                f"rel_err={logp_rel_err:.2e}"
+            )
+            assert dlogp_ok, (
+                f"dlogp mismatch: pytensor={pt_dlogp} rust={rs_dlogp} "
+                f"rel_err={dlogp_rel_err:.2e}"
+            )
 
     print()
 
