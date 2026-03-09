@@ -21,7 +21,7 @@ from pymc_rust_compiler.benchmark import (
     print_logp_comparison,
 )
 
-N_EVALS = 10_000
+N_EVALS = 500_000
 
 
 def make_normal_model():
