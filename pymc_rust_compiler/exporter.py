@@ -12,7 +12,12 @@ from pathlib import Path
 
 import numpy as np
 import pymc as pm
+try:
+    from pytensor.graph.traversal import graph_inputs
+except ImportError:
+    from pytensor.graph.basic import graph_inputs
 from pytensor.printing import debugprint
+from pytensor.tensor import TensorConstant
 
 
 @dataclass
@@ -46,6 +51,7 @@ class ModelContext:
     logp_graph: str
     logp_terms: dict[str, str]
     observed_data: dict[str, dict]
+    covariate_data: dict[str, dict]  # predictor/input data (e.g. x in regression)
     initial_point: ValidationPoint
     extra_points: list[ValidationPoint]
 
@@ -67,6 +73,7 @@ class ModelContext:
             "logp_graph": self.logp_graph,
             "logp_terms": self.logp_terms,
             "observed_data": self.observed_data,
+            "covariate_data": self.covariate_data,
             "validation": {
                 "initial_point": {
                     "point": self.initial_point.point,
@@ -162,6 +169,10 @@ class RustModelExporter:
             else:
                 observed_data[rv.name] = {"shape": "unknown"}
 
+        # Extract covariate/predictor data from the computational graph
+        # These are non-scalar TensorConstants that aren't observed data
+        covariate_data = self._extract_covariates(model, observed_data)
+
         logp_fn = model.compile_logp()
         dlogp_fn = model.compile_dlogp()
         test_point = model.initial_point()
@@ -202,9 +213,66 @@ class RustModelExporter:
             logp_graph=logp_graph,
             logp_terms=logp_terms,
             observed_data=observed_data,
+            covariate_data=covariate_data,
             initial_point=initial,
             extra_points=extra_points,
         )
+
+    @staticmethod
+    def _extract_covariates(
+        model: pm.Model, observed_data: dict[str, dict]
+    ) -> dict[str, dict]:
+        """Find non-scalar constant arrays in the logp graph (predictors/covariates).
+
+        These are numpy arrays passed into the model (e.g. x in regression)
+        that aren't observed RVs but are needed for computation.
+        """
+        logp = model.logp()
+        inputs = graph_inputs([logp])
+
+        # Collect observed data values for deduplication
+        obs_arrays = []
+        for info in observed_data.values():
+            vals = info.get("values")
+            if vals is not None:
+                obs_arrays.append(np.asarray(vals))
+
+        covariates = {}
+        unnamed_idx = 0
+        for inp in inputs:
+            if not isinstance(inp, TensorConstant):
+                continue
+            data = np.asarray(inp.data)
+            if data.ndim == 0 or data.size <= 1:
+                continue
+
+            # Skip if this is already in observed data
+            is_observed = False
+            for obs in obs_arrays:
+                if data.shape == obs.shape and np.allclose(data, obs):
+                    is_observed = True
+                    break
+            if is_observed:
+                continue
+
+            # Use the tensor's name if available, otherwise auto-generate
+            if inp.name:
+                name = inp.name
+            else:
+                name = f"x_{unnamed_idx}"
+                unnamed_idx += 1
+
+            covariates[name] = {
+                "shape": list(data.shape),
+                "dtype": str(data.dtype),
+                "n": int(np.prod(data.shape)),
+                "min": float(np.min(data)),
+                "max": float(np.max(data)),
+                "mean": float(np.mean(data)),
+                "values": data.tolist(),
+            }
+
+        return covariates
 
     def _try_extract_source(self) -> str | None:
         try:
@@ -240,32 +308,32 @@ class RustModelExporter:
             offset += p.size
         parts.append(f"\nTotal unconstrained parameters: {ctx.n_params}\n")
 
-        if ctx.observed_data:
-            parts.append("## Observed Data\n")
-            parts.append("IMPORTANT: You MUST embed this data as const arrays in your Rust code.\n")
-            for name, info in ctx.observed_data.items():
+        # List all data available in data.rs
+        all_data = {}
+        all_data.update(ctx.observed_data)
+        all_data.update(ctx.covariate_data)
+        if all_data:
+            parts.append("## Data (available via `use crate::data::*;`)\n")
+            parts.append(
+                "All data arrays are pre-generated in `data.rs` with full f64 precision.\n"
+                "Do NOT embed data in your code — use the constants from `data.rs`.\n"
+            )
+            parts.append("Available constants:")
+            for name, info in all_data.items():
+                rust_name = name.upper()
+                n = info.get("n", "?")
                 mn = info.get("min")
                 mx = info.get("max")
                 mean = info.get("mean")
                 range_str = f"[{mn:.3f}, {mx:.3f}]" if mn is not None else "unknown"
                 mean_str = f"{mean:.3f}" if mean is not None else "unknown"
+                is_obs = name in ctx.observed_data
+                label = "observed" if is_obs else "covariate/predictor"
                 parts.append(
-                    f"- {name}: shape={info.get('shape')}, dtype={info.get('dtype')}, "
-                    f"n={info.get('n')}, range={range_str}, mean={mean_str}"
+                    f"- `{rust_name}_DATA: &[f64]` — {label}, n={n}, "
+                    f"range={range_str}, mean={mean_str}"
                 )
-                # Include actual data values with full precision
-                values = info.get("values")
-                if values is not None:
-                    if isinstance(values[0], list):
-                        for dim_name, dim_vals in enumerate(values):
-                            parts.append(f"\n{name}[{dim_name}] values: {dim_vals}")
-                    else:
-                        # Full precision to avoid rounding errors
-                        formatted = ",\n    ".join(f"{v:.17e}" for v in values)
-                        parts.append(
-                            f"\nIMPORTANT: Copy these values EXACTLY (do NOT round or modify):"
-                            f"\n```rust\nconst {name.upper()}_DATA: &[f64] = &[\n    {formatted}\n];\n```"
-                        )
+                parts.append(f"  `{rust_name}_N: usize = {n}`")
             parts.append("")
 
         parts.append(f"## PyTensor Computational Graph (logp)\n```\n{ctx.logp_graph}\n```\n")

@@ -38,7 +38,7 @@ CRITICAL RULES:
 3. The gradient must be analytically correct - NUTS relies on this
 4. Do NOT include constant terms that don't depend on parameters (e.g. -0.5*log(2*pi) per observation)
 5. Use efficient single-pass computation where possible
-6. The observed data is already provided in `data.rs` — use `use crate::data::*;` to access it
+6. All data (observed + covariates/predictors) is provided in `data.rs` — use `use crate::data::*;` to access it. Do NOT embed data arrays in your generated code.
 
 IMPORTANT: Constant terms like -n/2*log(2*pi) and -log(scale) for priors are DROPPED by PyMC
 when computing the logp. Do NOT include them. Only include terms that depend on the parameters.
@@ -284,10 +284,15 @@ def _extract_rust_code(response_text: str) -> str:
 
 
 def _generate_data_rs(ctx) -> str:
-    """Generate a Rust file with observed data as exact const arrays."""
-    lines = ["//! Auto-generated observed data. DO NOT EDIT.\n"]
+    """Generate a Rust file with all data arrays (observed + covariates)."""
+    lines = ["//! Auto-generated data arrays. DO NOT EDIT.\n"]
 
-    for name, info in ctx.observed_data.items():
+    # Combine observed and covariate data
+    all_data = {}
+    all_data.update(ctx.observed_data)
+    all_data.update(ctx.covariate_data)
+
+    for name, info in all_data.items():
         values = info.get("values")
         if values is None:
             continue
