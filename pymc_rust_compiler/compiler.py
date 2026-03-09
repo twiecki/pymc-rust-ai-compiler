@@ -40,6 +40,18 @@ CRITICAL RULES:
 5. Use efficient single-pass computation where possible
 6. All data (observed + covariates/predictors) is provided in `data.rs` — use `use crate::data::*;` to access it. Do NOT embed data arrays in your generated code.
 
+IMPORTANT - OBSERVED DATA LIKELIHOOD:
+The logp MUST include the log-likelihood of ALL observed data points. This is typically the
+dominant term. For example, if y ~ Normal(mu, sigma) is observed with N data points, the logp
+must include: sum over i of [-0.5 * ((y[i] - mu[i]) / sigma)^2 - log(sigma)] for all N observations.
+Forgetting the observed likelihood is the #1 error — the logp from priors alone is much smaller
+than the total logp including observations.
+
+INDEX ARRAYS:
+When a data array is labeled as an INTEGER INDEX ARRAY, cast its elements to `usize` for array
+indexing. For example: `let group = X_1_DATA[i] as usize;` then use `a[group]` to index into
+group-level parameter arrays.
+
 IMPORTANT: Constant terms like -n/2*log(2*pi) and -log(scale) for priors are DROPPED by PyMC
 when computing the logp. Do NOT include them. Only include terms that depend on the parameters.
 

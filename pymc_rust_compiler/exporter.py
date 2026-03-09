@@ -262,6 +262,18 @@ class RustModelExporter:
                 name = f"x_{unnamed_idx}"
                 unnamed_idx += 1
 
+            # Detect integer index arrays (e.g., group_idx with values 0..n-1)
+            # Require at least 3 distinct values to avoid classifying binary covariates
+            is_index = False
+            n_groups = 0
+            flat = data.ravel()
+            if np.all(flat == np.floor(flat)) and np.min(flat) == 0:
+                unique_vals = np.unique(flat)
+                max_val = int(np.max(flat))
+                if max_val >= 2 and max_val < 200 and np.array_equal(unique_vals, np.arange(max_val + 1)):
+                    is_index = True
+                    n_groups = max_val + 1
+
             covariates[name] = {
                 "shape": list(data.shape),
                 "dtype": str(data.dtype),
@@ -270,9 +282,79 @@ class RustModelExporter:
                 "max": float(np.max(data)),
                 "mean": float(np.mean(data)),
                 "values": data.tolist(),
+                "is_index_array": is_index,
+                "n_groups": n_groups,
             }
 
         return covariates
+
+    def _infer_data_mapping(self, ctx) -> list[str]:
+        """Try to match source code variable names to extracted data constants.
+
+        Looks for patterns like var[index_var] and matches based on data characteristics.
+        """
+        source = ctx.source_code
+        if not source:
+            return []
+
+        import re as _re
+
+        hints = []
+
+        # Find variable names used in indexing: a[group_idx] → group_idx
+        index_vars = set(_re.findall(r'\w+\[(\w+)\]', source))
+        # Find other variable names that are likely data arrays (not parameters)
+        # Parameters are defined with ~ or = expressions
+        param_names = set(_re.findall(r'(\w+)\s*~', source))
+        param_names.update(_re.findall(r'(\w+)\s*=\s*\w+', source))
+
+        # Covariates: match index arrays to index variables, others to remaining vars
+        covariate_items = list(ctx.covariate_data.items())
+        index_covariates = [(n, i) for n, i in covariate_items if i.get("is_index_array")]
+        non_index_covariates = [(n, i) for n, i in covariate_items if not i.get("is_index_array")]
+
+        # Match index covariates to index variables from source
+        # If only one index covariate and one index variable, match them directly
+        if len(index_covariates) == 1 and len(index_vars) >= 1:
+            cov_name, cov_info = index_covariates[0]
+            n_groups = cov_info.get("n_groups", 0)
+            src_var = sorted(index_vars)[0]
+            hints.append(
+                f"`{src_var}` in source → `{cov_name.upper()}_DATA` "
+                f"(integer indices, {n_groups} groups, cast to `usize` for indexing)"
+            )
+        else:
+            for (cov_name, cov_info), src_var in zip(index_covariates, sorted(index_vars)):
+                n_groups = cov_info.get("n_groups", 0)
+                hints.append(
+                    f"`{src_var}` in source → `{cov_name.upper()}_DATA` "
+                    f"(integer indices, {n_groups} groups, cast to `usize` for indexing)"
+                )
+
+        # Match remaining covariates to non-index, non-parameter variables
+        # Look for variables used in arithmetic but not defined as params
+        arith_vars = set(_re.findall(r'[\+\-\*]\s*(\w+)', source))
+        arith_vars -= param_names
+        arith_vars -= index_vars
+        arith_vars -= {'observed', 'shape'}
+        remaining_src_vars = sorted(arith_vars)
+
+        for (cov_name, cov_info), src_var in zip(non_index_covariates, remaining_src_vars):
+            hints.append(
+                f"`{src_var}` in source → `{cov_name.upper()}_DATA`"
+            )
+
+        # Observed data mapping
+        for obs_name in ctx.observed_data:
+            # Find the observed variable in source (pattern: var ~ ..., observed)
+            obs_match = _re.search(r'(\w+)\s*~.*observed', source)
+            if obs_match:
+                src_obs = obs_match.group(1)
+                hints.append(
+                    f"`{src_obs}` (observed) in source → `{obs_name.upper()}_DATA`"
+                )
+
+        return hints
 
     def _try_extract_source(self) -> str | None:
         try:
@@ -328,12 +410,28 @@ class RustModelExporter:
                 range_str = f"[{mn:.3f}, {mx:.3f}]" if mn is not None else "unknown"
                 mean_str = f"{mean:.3f}" if mean is not None else "unknown"
                 is_obs = name in ctx.observed_data
-                label = "observed" if is_obs else "covariate/predictor"
+                is_idx = info.get("is_index_array", False)
+                n_groups = info.get("n_groups", 0)
+                if is_obs:
+                    label = "observed"
+                elif is_idx:
+                    label = f"INTEGER INDEX ARRAY (values 0..{n_groups-1}, {n_groups} groups) — cast to usize for array indexing"
+                else:
+                    label = "covariate/predictor"
                 parts.append(
                     f"- `{rust_name}_DATA: &[f64]` — {label}, n={n}, "
                     f"range={range_str}, mean={mean_str}"
                 )
                 parts.append(f"  `{rust_name}_N: usize = {n}`")
+
+            # Try to add source-to-data mapping hints
+            if ctx.source_code:
+                mapping_hints = self._infer_data_mapping(ctx)
+                if mapping_hints:
+                    parts.append("")
+                    parts.append("**Data mapping** (source variable → Rust constant):")
+                    for hint in mapping_hints:
+                        parts.append(f"- {hint}")
             parts.append("")
 
         parts.append(f"## PyTensor Computational Graph (logp)\n```\n{ctx.logp_graph}\n```\n")
