@@ -10,6 +10,7 @@ dependencies = [
     "anthropic>=0.52",
     "numpy",
     "marimo>=0.20.4",
+    "bridgestan>=2.7.0",
 ]
 
 [project.optional-dependencies]
