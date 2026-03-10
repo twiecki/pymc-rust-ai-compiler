@@ -13,6 +13,7 @@ model compiles and validates correctly.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -311,8 +312,9 @@ def _detect_skills(model: pm.Model, ctx) -> list[str]:
     return skills
 
 
+@functools.lru_cache(maxsize=None)
 def _load_skill(name: str) -> str:
-    """Load a skill file by name."""
+    """Load a skill file by name (cached after first read)."""
     path = _SKILLS_DIR / f"{name}.md"
     if not path.exists():
         return ""
@@ -460,6 +462,7 @@ def compile_model(
 
     total_input_tokens = 0
     total_output_tokens = 0
+    turn = 0
 
     for turn in range(max_turns):
         # Call Claude
@@ -537,7 +540,7 @@ def compile_model(
         build_dir=build_path,
         timings=timings,
         n_tool_calls=state.tool_calls,
-        conversation_turns=turn + 1 if 'turn' in dir() else 0,
+        conversation_turns=turn + 1,
         token_usage={
             "input_tokens": total_input_tokens,
             "output_tokens": total_output_tokens,
@@ -621,22 +624,12 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
         (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
     ]
 
-    def _flatten(v):
-        if isinstance(v, (list, tuple)):
-            for item in v:
-                yield from _flatten(item)
-        elif hasattr(v, '__iter__') and not isinstance(v, str):
-            for item in v:
-                yield from _flatten(item)
-        else:
-            yield float(v)
-
     input_lines = []
     for name, vp in all_points:
         position = []
         for param_name in ctx.param_order:
             val = vp.point[param_name]
-            position.extend(_flatten(val))
+            position.extend(np.asarray(val, dtype=np.float64).ravel())
         input_lines.append(",".join(f"{v:.17e}" for v in position))
 
     stdin_data = "\n".join(input_lines) + "\n"
@@ -758,9 +751,15 @@ def _tool_read_file(
     if not file_path.exists():
         # List available files
         available = []
-        for f in state.build_path.rglob("*"):
-            if f.is_file() and "target" not in f.parts:
-                available.append(str(f.relative_to(state.build_path)))
+        # List root-level files and src/ contents (skip target/ which can be huge)
+        for f in state.build_path.iterdir():
+            if f.is_file():
+                available.append(f.name)
+        src = state.build_path / "src"
+        if src.exists():
+            for f in src.rglob("*"):
+                if f.is_file():
+                    available.append(str(f.relative_to(state.build_path)))
         return f"File not found: {rel_path}\nAvailable files: {', '.join(available)}"
 
     content = file_path.read_text()
