@@ -19,6 +19,7 @@ The agent has four tools: `write_rust_code`, `cargo_build`, `validate_logp`, and
 - **GP CUDA**: GPU-accelerated via cudarc + cuSOLVER for NVIDIA GPUs
 - **GP MLX**: GPU-accelerated via mlx-rs + Metal for Apple Silicon (M1-M5)
 - **ZeroSumNormal**: ZeroSum transform formulas and constraint handling
+- **Stan → PyMC**: Distribution mappings, idiom translation, constraint handling
 
 Hardware is auto-detected: CUDA → MLX → CPU fallback.
 
@@ -82,6 +83,10 @@ python examples/run_benchmark.py
 
 # logp+dlogp evaluation benchmark (Rust vs nutpie/Numba)
 python examples/bench_logp.py
+
+# Stan → PyMC transpilation
+python examples/stan_pymc_01_normal.py
+python examples/stan_pymc_02_hierarchical.py
 ```
 
 ## Architecture
@@ -90,13 +95,18 @@ python examples/bench_logp.py
 pymc_rust_compiler/
 ├── exporter.py       # Extract parameters, transforms, logp graph from pm.Model()
 ├── compiler.py       # Agentic loop: Claude API → Rust code → build → validate
+├── stan_exporter.py  # Extract Stan model context via BridgeStan
+├── stan_compiler.py  # Stan → Rust agentic compiler
+├── stan_to_pymc.py   # Stan → PyMC agentic transpiler
 ├── nutpie_bridge.py  # nutpie integration: compiled Rust → nutpie.sample()
 ├── benchmark.py      # logp eval benchmarks: Rust vs Numba (jit + cfunc)
 └── skills/           # Model-specific knowledge for the AI agent
     ├── gp.md         # CPU GP (faer Cholesky)
     ├── gp_cuda.md    # NVIDIA GPU GP (cudarc + cuSOLVER)
     ├── gp_mlx.md     # Apple Silicon GP (mlx-rs + Metal)
-    └── zerosumnormal.md
+    ├── zerosumnormal.md
+    ├── stan.md       # Stan → Rust translation knowledge
+    └── stan_to_pymc.md  # Stan → PyMC translation knowledge
 
 rust_template/      # Template Rust project (Cargo.toml, data loading, validation)
 bench_runner/       # Rust lib for calling Numba cfunc from Rust (like nutpie)
@@ -104,3 +114,24 @@ compiled_models/    # Pre-compiled models (normal, linreg, hierarchical, GP, ...
 ```
 
 The key insight: `pm.Model()` already contains everything needed — parameters, transforms, shapes, logp functions. We extract it all and let the AI generate optimized Rust that matches PyMC's exact numerical output.
+
+## Stan → PyMC Transpiler
+
+Besides compiling to Rust, the project also supports **transpiling Stan models to PyMC**:
+
+```python
+from pymc_rust_compiler import transpile_stan_to_pymc
+
+stan_code = """
+data { int<lower=0> N; array[N] real y; }
+parameters { real mu; real<lower=0> sigma; }
+model { mu ~ normal(0, 10); sigma ~ normal(0, 5); y ~ normal(mu, sigma); }
+"""
+
+result = transpile_stan_to_pymc(stan_code, data={"N": 100, "y": [...]})
+if result.success:
+    model = result.get_model(data)  # returns a pm.Model
+    print(result.pymc_code)         # generated Python code
+```
+
+The transpiler uses the same agentic architecture: Claude generates PyMC code, validates logp against BridgeStan reference values, and iterates until the models match. This is useful for migrating Stan codebases to PyMC.

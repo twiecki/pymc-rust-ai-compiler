@@ -8,6 +8,7 @@ from pymc_rust_compiler.stan_exporter import (
     export_stan_model,
 )
 from pymc_rust_compiler.stan_compiler import compile_stan_model, StanCompilationResult
+from pymc_rust_compiler.stan_to_pymc import transpile_stan_to_pymc, StanToPyMCResult
 
 __all__ = [
     # PyMC → Rust
@@ -23,6 +24,9 @@ __all__ = [
     "StanModelContext",
     "StanModelExporter",
     "StanCompilationResult",
+    # Stan → PyMC
+    "transpile_stan_to_pymc",
+    "StanToPyMCResult",
 ]
 
 
