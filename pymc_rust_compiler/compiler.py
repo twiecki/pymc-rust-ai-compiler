@@ -379,7 +379,7 @@ def _build_system_prompt(skills: list[str]) -> str:
 _SKILL_CARGO_DEPS: dict[str, dict[str, str]] = {
     "gp": {"faer": "0.24"},
     "gp_cuda": {"cudarc": '{ version = "0.12", features = ["cublas", "cusolver"] }'},
-    "gp_mlx": {"mlx-rs": '{ version = "0.25", features = ["metal"] }'},
+    "gp_mlx": {"mlx-rs": '0.25'},
 }
 
 
@@ -641,7 +641,7 @@ def _tool_cargo_build(state: _AgentState, verbose: bool) -> str:
         cwd=state.build_path,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=600,
     )
     elapsed = time.time() - t0
     state.timings[f"build_{state.builds}"] = elapsed
