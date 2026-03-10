@@ -352,6 +352,7 @@ class CompilationResult:
     token_usage: dict[str, int] = field(default_factory=lambda: {
         "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
     })
+    us_per_eval: float | None = None  # benchmark result if available
 
     @property
     def success(self) -> bool:
@@ -951,3 +952,270 @@ fn main() {
 }
 """
     (src_dir / "bench.rs").write_text(bench_rs)
+
+
+# ---------------------------------------------------------------------------
+# Optimization loop (Round 2): profile-guided optimization of generated code
+# ---------------------------------------------------------------------------
+
+OPTIMIZE_SYSTEM_PROMPT = """You are an expert Rust performance engineer optimizing logp+gradient code.
+
+You are given existing, CORRECT Rust code that computes logp and gradients for a Bayesian model.
+Your job is to make it FASTER while keeping the output NUMERICALLY IDENTICAL.
+
+You have the same tools as before: write_rust_code, cargo_build, validate_logp, read_file.
+Additionally you have a `bench_logp` tool that measures evaluation speed.
+
+OPTIMIZATION STRATEGIES (in order of typical impact):
+
+1. **SIMD-FRIENDLY LOOPS**: Ensure inner loops are auto-vectorizable:
+   - Use local f64 accumulators (not array writes inside the loop)
+   - Avoid branches inside hot loops
+   - Use `x * x` not `.powi(2)`, avoid `.ln()` / `.exp()` inside loops if possible
+
+2. **LOOP FUSION**: Merge multiple passes over the same data into one.
+   If the code loops over observations multiple times (once for logp, once for gradients),
+   fuse them into a single pass.
+
+3. **MEMORY ACCESS PATTERNS**: Ensure sequential memory access.
+   - Process data arrays in order (no random access if possible)
+   - Keep working set in cache (L1 is ~32KB)
+
+4. **PRECOMPUTE EVERYTHING**: Move ALL invariants outside loops.
+   - 1/sigma, 1/sigma^2, log constants, etc.
+   - If a log-transformed parameter is used, use the unconstrained value directly
+
+5. **UNSAFE HINTS** (when safe): Use `get_unchecked()` for data array access
+   in inner loops when you've already verified the bounds. This eliminates
+   bounds checks that prevent auto-vectorization.
+
+6. **EXPLICIT SIMD** (last resort): Use `std::arch::x86_64` intrinsics for
+   critical inner loops if auto-vectorization isn't happening.
+
+RULES:
+- The output MUST be numerically identical — validation must still pass
+- Do NOT change the public interface (GeneratedLogp struct, CpuLogpFunc impl)
+- Measure before and after with bench_logp
+- If an optimization breaks validation, revert it immediately
+"""
+
+
+def _bench_logp_tool(state: _AgentState, verbose: bool) -> str:
+    """Run the bench binary and return timing results."""
+    build_path = state.build_path.resolve()
+    binary = build_path / "target" / "release" / "bench"
+    if not binary.exists():
+        # Try building it
+        build_result = subprocess.run(
+            ["cargo", "build", "--release", "--bin", "bench"],
+            cwd=build_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if build_result.returncode != 0:
+            return f"Error: bench build failed: {build_result.stderr[:500]}"
+
+    # Use initial point as test vector
+    ctx = state.ctx
+    position = []
+    for param_name in ctx.param_order:
+        val = ctx.initial_point.point[param_name]
+        position.extend(np.asarray(val, dtype=np.float64).ravel())
+
+    n_evals = 500_000
+    param_str = ",".join(f"{v:.17e}" for v in position)
+    stdin_data = f"{n_evals}\n{param_str}\n"
+
+    try:
+        result = subprocess.run(
+            [str(binary)],
+            cwd=build_path,
+            input=stdin_data,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return "Error: benchmark timed out"
+
+    if result.returncode != 0:
+        return f"Error: bench failed: {result.stderr[:500]}"
+
+    parts = result.stdout.strip().split(",")
+    us_per_eval = float(parts[0])
+
+    if verbose:
+        print(f"  [bench_logp] {us_per_eval:.3f} us/eval ({n_evals:,} evaluations)")
+
+    return f"Benchmark: {us_per_eval:.3f} us/eval ({n_evals:,} evaluations, {1e6/us_per_eval:,.0f} evals/sec)"
+
+
+def optimize_model(
+    compile_result: CompilationResult,
+    model: pm.Model,
+    api_key: str | None = None,
+    max_turns: int = 20,
+    model_name: str = "claude-sonnet-4-20250514",
+    verbose: bool = True,
+) -> CompilationResult:
+    """Optimize an already-compiled model's Rust code for speed.
+
+    Takes a successful CompilationResult and runs a second agent pass
+    focused on performance optimization. The agent can benchmark,
+    rewrite code, and validate that correctness is preserved.
+
+    Args:
+        compile_result: A successful CompilationResult from compile_model.
+        model: The original PyMC model (for re-extracting context).
+        api_key: Anthropic API key.
+        max_turns: Max optimization iterations.
+        model_name: Claude model to use.
+        verbose: Print progress.
+
+    Returns:
+        New CompilationResult with optimized code and benchmark timing.
+    """
+    import anthropic
+
+    if not compile_result.success:
+        raise ValueError("Cannot optimize a failed compilation")
+
+    api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ValueError("No API key. Set ANTHROPIC_API_KEY or pass api_key=")
+
+    client = anthropic.Anthropic(api_key=api_key)
+    build_path = compile_result.build_dir
+
+    # Re-extract model context for validation
+    exporter = RustModelExporter(model)
+    ctx = exporter.context
+
+    # Read current generated code
+    current_code = (build_path / "src" / "generated.rs").read_text()
+
+    # Tools: same as compile + bench_logp
+    optimize_tools = TOOLS + [
+        {
+            "name": "bench_logp",
+            "description": (
+                "Benchmark logp+dlogp evaluation speed. Returns microseconds per evaluation. "
+                "Run this before and after optimizations to measure improvement."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    ]
+
+    # Build initial prompt with code and baseline
+    state = _AgentState(
+        build_path=build_path,
+        ctx=ctx,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Optimize this Rust logp+gradient implementation for maximum speed.\n\n"
+                "The code is CORRECT and passes validation. Your goal is to make it faster "
+                "while keeping output numerically identical.\n\n"
+                "Steps:\n"
+                "1. Run `bench_logp` to get the baseline speed\n"
+                "2. Read the current code with `read_file`\n"
+                "3. Apply optimizations and write the new code\n"
+                "4. Build and validate (correctness must be preserved!)\n"
+                "5. Benchmark again to measure improvement\n"
+                "6. Iterate if there's more to gain\n\n"
+                f"The model has {ctx.n_params} parameters and the code is {len(current_code)} chars.\n"
+                f"Build directory: {build_path}\n"
+            ),
+        }],
+    )
+
+    if verbose:
+        print(f"\nStarting optimization loop (build_dir={build_path})...")
+
+    # Detect skills for system prompt augmentation
+    skills = _detect_skills(model, ctx)
+    system_prompt = OPTIMIZE_SYSTEM_PROMPT
+    for skill_name in skills:
+        content = _load_skill(skill_name)
+        if content:
+            system_prompt += f"\n\n{'='*60}\n{content}"
+
+    total_input_tokens = 0
+    total_output_tokens = 0
+    turn = 0
+    best_us = None
+
+    for turn in range(max_turns):
+        t0 = time.time()
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=16384,
+            system=system_prompt,
+            tools=optimize_tools,
+            messages=state.messages,
+        )
+
+        if hasattr(response, "usage") and response.usage:
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+            if verbose:
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
+
+        if response.stop_reason == "end_turn":
+            if verbose:
+                for block in response.content:
+                    if hasattr(block, "text"):
+                        print(f"  Agent: {block.text[:300]}")
+            break
+
+        if response.stop_reason != "tool_use":
+            break
+
+        state.messages.append({"role": "assistant", "content": response.content})
+
+        tool_results = []
+        for block in response.content:
+            if block.type == "text" and block.text.strip() and verbose:
+                print(f"  Agent: {block.text[:300]}")
+            elif block.type == "tool_use":
+                state.tool_calls += 1
+                if block.name == "bench_logp":
+                    result = _bench_logp_tool(state, verbose)
+                    # Track best timing
+                    if "us/eval" in result and "Error" not in result:
+                        us = float(result.split()[1])
+                        if best_us is None or us < best_us:
+                            best_us = us
+                else:
+                    result = _execute_tool(block.name, block.input, state, verbose)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+
+        state.messages.append({"role": "user", "content": tool_results})
+
+    # Read final code
+    final_code = (build_path / "src" / "generated.rs").read_text()
+
+    return CompilationResult(
+        rust_code=final_code,
+        logp_validated=state.validated or compile_result.logp_validated,
+        validation_errors=[],
+        n_attempts=state.builds,
+        build_dir=build_path,
+        timings={},
+        n_tool_calls=state.tool_calls,
+        conversation_turns=turn + 1,
+        token_usage={
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "total_tokens": total_input_tokens + total_output_tokens,
+        },
+        us_per_eval=best_us,
+    )
