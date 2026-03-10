@@ -295,11 +295,31 @@ def _cuda_available() -> bool:
         return False
 
 
-def _detect_skills(model: pm.Model, ctx, use_cuda: bool | None = None) -> list[str]:
+@functools.lru_cache(maxsize=1)
+def _mlx_available() -> bool:
+    """Check if Apple Silicon with Metal is available at runtime."""
+    import platform
+    if platform.system() != "Darwin" or platform.machine() != "arm64":
+        return False
+    # Verify Metal support via system_profiler
+    try:
+        result = subprocess.run(
+            ["system_profiler", "SPDisplaysDataType"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return "Metal" in result.stdout
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _detect_skills(
+    model: pm.Model, ctx, use_cuda: bool | None = None, use_mlx: bool | None = None,
+) -> list[str]:
     """Detect which skills are needed based on model structure.
 
     Returns a list of skill names (matching filenames in skills/).
-    If use_cuda is None, auto-detect CUDA availability.
+    If use_cuda/use_mlx is None, auto-detect hardware availability.
+    GPU priority: CUDA > MLX > CPU (faer).
     """
     skills = []
     has_gp = False
@@ -319,8 +339,11 @@ def _detect_skills(model: pm.Model, ctx, use_cuda: bool | None = None) -> list[s
 
     if has_gp:
         cuda = use_cuda if use_cuda is not None else _cuda_available()
+        mlx = use_mlx if use_mlx is not None else _mlx_available()
         if cuda:
             skills.append("gp_cuda")
+        elif mlx:
+            skills.append("gp_mlx")
         else:
             skills.append("gp")
 
@@ -356,6 +379,7 @@ def _build_system_prompt(skills: list[str]) -> str:
 _SKILL_CARGO_DEPS: dict[str, dict[str, str]] = {
     "gp": {"faer": "0.24"},
     "gp_cuda": {"cudarc": '{ version = "0.12", features = ["cublas", "cusolver"] }'},
+    "gp_mlx": {"mlx-rs": '{ version = "0.25", features = ["metal"] }'},
 }
 
 
@@ -404,6 +428,7 @@ def compile_model(
     build_dir: str | Path | None = None,
     verbose: bool = True,
     use_cuda: bool | None = None,
+    use_mlx: bool | None = None,
 ) -> CompilationResult:
     """Compile a PyMC model to optimized Rust via an agentic Claude loop.
 
@@ -443,7 +468,7 @@ def compile_model(
         print(f"  {ctx.n_params} parameters, {len(prompt)} char prompt")
 
     # Detect model-specific skills and build augmented system prompt
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_mlx=use_mlx)
     system_prompt = _build_system_prompt(skills)
     if verbose and skills:
         print(f"  Skills loaded: {', '.join(skills)}")
@@ -1085,6 +1110,7 @@ def optimize_model(
     model_name: str = "claude-sonnet-4-20250514",
     verbose: bool = True,
     use_cuda: bool | None = None,
+    use_mlx: bool | None = None,
 ) -> CompilationResult:
     """Optimize an already-compiled model's Rust code for speed.
 
@@ -1164,7 +1190,7 @@ def optimize_model(
         print(f"\nStarting optimization loop (build_dir={build_path})...")
 
     # Detect skills for system prompt augmentation
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_mlx=use_mlx)
     system_prompt = OPTIMIZE_SYSTEM_PROMPT
     for skill_name in skills:
         content = _load_skill(skill_name)

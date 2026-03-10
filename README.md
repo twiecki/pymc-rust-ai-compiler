@@ -13,7 +13,14 @@ PyMC Model → Extract logp graph + validation points → Claude API → Rust co
 3. **Verify**: Build and validate logp + gradients against PyMC's reference values
 4. **Iterate**: If validation fails, the agent reads errors, inspects data, and fixes code autonomously
 
-The agent has four tools: `write_rust_code`, `cargo_build`, `validate_logp`, and `read_file`. It loops until the model compiles and validates correctly. Model-specific "skills" (GP, ZeroSumNormal) are detected automatically and loaded to provide specialized knowledge (e.g., faer Cholesky patterns, ZeroSum transform formulas).
+The agent has four tools: `write_rust_code`, `cargo_build`, `validate_logp`, and `read_file`. It loops until the model compiles and validates correctly. Model-specific "skills" are detected automatically and loaded to provide specialized knowledge:
+
+- **GP**: CPU linear algebra via faer (Cholesky, solves, inverses)
+- **GP CUDA**: GPU-accelerated via cudarc + cuSOLVER for NVIDIA GPUs
+- **GP MLX**: GPU-accelerated via mlx-rs + Metal for Apple Silicon (M1-M5)
+- **ZeroSumNormal**: ZeroSum transform formulas and constraint handling
+
+Hardware is auto-detected: CUDA → MLX → CPU fallback.
 
 ## Benchmarks
 
@@ -81,9 +88,15 @@ python examples/bench_logp.py
 
 ```
 pymc_rust_compiler/
-├── exporter.py     # Extract parameters, transforms, logp graph from pm.Model()
-├── compiler.py     # Agentic loop: Claude API → Rust code → build → validate
-└── benchmark.py    # logp eval benchmarks: Rust vs Numba (jit + cfunc)
+├── exporter.py       # Extract parameters, transforms, logp graph from pm.Model()
+├── compiler.py       # Agentic loop: Claude API → Rust code → build → validate
+├── nutpie_bridge.py  # nutpie integration: compiled Rust → nutpie.sample()
+├── benchmark.py      # logp eval benchmarks: Rust vs Numba (jit + cfunc)
+└── skills/           # Model-specific knowledge for the AI agent
+    ├── gp.md         # CPU GP (faer Cholesky)
+    ├── gp_cuda.md    # NVIDIA GPU GP (cudarc + cuSOLVER)
+    ├── gp_mlx.md     # Apple Silicon GP (mlx-rs + Metal)
+    └── zerosumnormal.md
 
 rust_template/      # Template Rust project (Cargo.toml, data loading, validation)
 bench_runner/       # Rust lib for calling Numba cfunc from Rust (like nutpie)
