@@ -44,6 +44,121 @@ name = "validate"
 path = "src/main.rs"
 """
 
+CARGO_TOML_BURN = """\
+[package]
+name = "pytorch-to-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+burn = { version = "0.16", features = ["ndarray", "autodiff"] }
+
+[[bin]]
+name = "validate"
+path = "src/main.rs"
+"""
+
+SYSTEM_PROMPT_BURN = """\
+You are an expert Rust code generator that translates PyTorch neural network models
+to Rust using the **Burn deep learning framework**. Burn provides optimized tensor
+operations and automatic differentiation.
+
+You have access to tools to iteratively write, build, and validate Rust code.
+Your workflow:
+1. Analyze the PyTorch model: parameter shapes, forward pass logic, activation functions
+2. Write the Rust code using `write_code`
+3. Build with `cargo_build` — if it fails, read the errors, fix the code, rebuild
+4. Validate with `validate_model` — checks forward pass outputs and gradients against PyTorch reference
+5. Iterate until validation passes
+
+You can use `read_source` to re-read the original PyTorch source code, and
+`read_file` to inspect any file in the Rust project.
+
+CRITICAL RULES:
+1. Generate a complete Rust module (src/generated.rs) with:
+   - `pub fn forward(input: &[f32]) -> Vec<f32>` — the forward pass
+   - `pub fn forward_with_grad(input: &[f32], param_name: &str) -> (Vec<f32>, Vec<f32>)` —
+     forward pass + gradient of sum(output) w.r.t. the named parameter
+2. Use Burn's Tensor API for all tensor operations:
+   - `use burn::prelude::*;`
+   - `use burn::tensor::activation;`
+   - `use burn::backend::NdArray;` for forward-only
+   - `use burn::backend::Autodiff;` for gradient computation
+   - Type alias: `type B = NdArray<f32>;` and `type AB = Autodiff<NdArray<f32>>;`
+3. Load weights from data.rs constants into Burn tensors:
+   ```rust
+   let data = TensorData::new(WEIGHT_CONST.to_vec(), [rows, cols]);
+   let w: Tensor<B, 2> = Tensor::from_data(data, &device);
+   ```
+4. Use Burn operations instead of manual loops:
+   - `a.matmul(b)` for matrix multiply
+   - `activation::softmax(x, dim)` for softmax
+   - `activation::gelu(x)` for GELU
+   - `x.reshape([d1, d2, ...])` for reshape
+   - `x.swap_dims(a, b)` for transpose
+   - `x.narrow(dim, start, len)` to slice along a dimension
+   - `x.mask_fill(mask, value)` for masked fill
+5. For layer_norm, implement manually:
+   ```rust
+   fn layer_norm<B: Backend>(input: Tensor<B, 3>, weight: Tensor<B, 1>,
+                              bias: Tensor<B, 1>, eps: f64) -> Tensor<B, 3> {
+       let mean = input.clone().mean_dim(2);
+       let diff = input - mean;
+       let var = diff.clone().powf_scalar(2.0).mean_dim(2);
+       let inv_std = (var + eps).sqrt().recip();
+       let normalized = diff * inv_std;
+       normalized * weight.unsqueeze() + bias.unsqueeze()
+   }
+   ```
+6. For `forward_with_grad`, use the Autodiff backend:
+   - Load the target parameter with `.require_grad()`
+   - Run the forward pass
+   - Call `output.sum().backward()` to get gradients
+   - Extract gradient with `param.grad(&grads).unwrap()`
+7. Use f32 throughout. Device: `let device = Default::default();`
+8. Parameter data is provided in `src/data.rs` as `pub const` arrays.
+9. Causal attention mask: use `Tensor::ones([t, t]).triu(1)` for upper triangular,
+   then `.bool()` and `.mask_fill()` with NEG_INFINITY.
+
+IMPORTANT PyTorch → Burn Operation Mapping:
+- `x @ w.T + b` → `x.matmul(w.transpose()).add(b.unsqueeze())`
+- `x.view(B,T,C)` → `x.reshape([b, t, c])`
+- `x.transpose(1, 2)` → `x.swap_dims(1, 2)`
+- `F.softmax(x, dim=-1)` → `activation::softmax(x, last_dim_index)`
+- `x.masked_fill(mask == 0, -inf)` → `x.mask_fill(mask.bool_not(), f32::NEG_INFINITY)`
+- `torch.tril(ones)` → create with `Tensor::ones().triu(1)` then invert
+
+RUST CODE STRUCTURE:
+```rust
+use burn::prelude::*;
+use burn::tensor::activation;
+use burn::backend::NdArray;
+use crate::data::*;
+
+type B = NdArray<f32>;
+
+// Helper to load 2D tensor from data.rs
+fn load_2d(data: &[f32], rows: usize, cols: usize, device: &<B as Backend>::Device) -> Tensor<B, 2> {
+    Tensor::from_data(TensorData::new(data.to_vec(), [rows, cols]), device)
+}
+
+fn load_1d(data: &[f32], len: usize, device: &<B as Backend>::Device) -> Tensor<B, 1> {
+    Tensor::from_data(TensorData::new(data.to_vec(), [len]), device)
+}
+
+pub fn forward(input: &[f32]) -> Vec<f32> {
+    let device = Default::default();
+    // Load input as tensor, load weights, run model
+    // Return flattened output as Vec<f32>
+}
+
+pub fn forward_with_grad(input: &[f32], param_name: &str) -> (Vec<f32>, Vec<f32>) {
+    // Same but using Autodiff<NdArray<f32>> backend
+    // Return (output, gradient)
+}
+```
+"""
+
 MAIN_RS = """\
 mod generated;
 mod data;
@@ -305,13 +420,14 @@ def _load_skill(name: str) -> str:
 
 # ── Rust project setup ───────────────────────────────────────────────────────
 
-def _setup_rust_project(build_path: Path, ctx: ModelContext):
+def _setup_rust_project(build_path: Path, ctx: ModelContext, backend: str = "pure"):
     """Create a Rust project with parameter data baked in."""
     src = build_path / "src"
     src.mkdir(parents=True, exist_ok=True)
 
     # Cargo.toml
-    (build_path / "Cargo.toml").write_text(CARGO_TOML)
+    cargo = CARGO_TOML_BURN if backend == "burn" else CARGO_TOML
+    (build_path / "Cargo.toml").write_text(cargo)
 
     # main.rs
     (src / "main.rs").write_text(MAIN_RS)
@@ -815,12 +931,9 @@ def transpile_pytorch_to_rust(
     verbose: bool = True,
     loss_fn: Callable | None = None,
     source_code: str | None = None,
+    backend: str = "pure",
 ) -> RustTranspileResult:
     """Transpile a PyTorch nn.Module to optimized Rust via an agentic Claude loop.
-
-    The generated Rust code has zero dependencies — pure f32 math.
-    Parameters are baked in as const arrays. The forward pass and gradient
-    computation are validated against PyTorch reference values.
 
     Args:
         module: PyTorch nn.Module to transpile.
@@ -832,10 +945,15 @@ def transpile_pytorch_to_rust(
         verbose: Print progress.
         loss_fn: Optional scalar loss function for gradient computation.
         source_code: Optional source code override.
+        backend: "pure" for zero-dependency Rust, "burn" for Burn framework
+                 (optimized matmul + autodiff).
 
     Returns:
         RustTranspileResult with generated Rust code and validation status.
     """
+    if backend not in ("pure", "burn"):
+        raise ValueError(f"backend must be 'pure' or 'burn', got {backend!r}")
+
     from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -846,7 +964,7 @@ def transpile_pytorch_to_rust(
 
     # Step 1: Extract model context from PyTorch
     if verbose:
-        print("Extracting PyTorch model context...")
+        print(f"Extracting PyTorch model context (backend={backend})...")
     t0 = time.time()
     exporter = PytorchModelExporter(
         module, sample_input,
@@ -866,14 +984,18 @@ def transpile_pytorch_to_rust(
     else:
         build_path = Path(tempfile.mkdtemp(prefix="pytorch_rust_"))
 
-    _setup_rust_project(build_path, ctx)
+    _setup_rust_project(build_path, ctx, backend=backend)
 
     if verbose:
         print(f"  Build dir: {build_path}")
 
     # Step 3: Build system prompt with skill
-    system_prompt = SYSTEM_PROMPT
-    skill = _load_skill("pytorch_to_rust")
+    if backend == "burn":
+        system_prompt = SYSTEM_PROMPT_BURN
+        skill = _load_skill("pytorch_to_rust_burn")
+    else:
+        system_prompt = SYSTEM_PROMPT
+        skill = _load_skill("pytorch_to_rust")
     if skill:
         system_prompt += f"\n\n{'='*60}\n{skill}"
 

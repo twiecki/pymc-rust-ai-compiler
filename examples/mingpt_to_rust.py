@@ -292,6 +292,10 @@ class MinGPTCore(nn.Module):
 
     from pymc_rust_compiler import transpile_pytorch_to_rust
 
+    # Use "burn" backend for optimized tensors + autodiff, or "pure" for zero-dep
+    backend = sys.argv[1] if len(sys.argv) > 1 else "burn"
+    print(f"  Using backend: {backend}")
+
     result = transpile_pytorch_to_rust(
         model,
         sample_input,
@@ -299,6 +303,7 @@ class MinGPTCore(nn.Module):
         model_name="claude-sonnet-4-20250514",
         verbose=True,
         source_code=source_code,
+        backend=backend,
     )
 
     print()
