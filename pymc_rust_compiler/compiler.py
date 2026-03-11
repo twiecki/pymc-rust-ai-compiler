@@ -296,30 +296,20 @@ def _cuda_available() -> bool:
 
 
 @functools.lru_cache(maxsize=1)
-def _mlx_available() -> bool:
-    """Check if Apple Silicon with Metal is available at runtime."""
+def _accelerate_available() -> bool:
+    """Check if Apple Silicon with Accelerate framework is available."""
     import platform
-    if platform.system() != "Darwin" or platform.machine() != "arm64":
-        return False
-    # Verify Metal support via system_profiler
-    try:
-        result = subprocess.run(
-            ["system_profiler", "SPDisplaysDataType"],
-            capture_output=True, text=True, timeout=5,
-        )
-        return "Metal" in result.stdout
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
 def _detect_skills(
-    model: pm.Model, ctx, use_cuda: bool | None = None, use_mlx: bool | None = None,
+    model: pm.Model, ctx, use_cuda: bool | None = None, use_accelerate: bool | None = None,
 ) -> list[str]:
     """Detect which skills are needed based on model structure.
 
     Returns a list of skill names (matching filenames in skills/).
-    If use_cuda/use_mlx is None, auto-detect hardware availability.
-    GPU priority: CUDA > MLX > CPU (faer).
+    If use_cuda/use_accelerate is None, auto-detect hardware availability.
+    Priority: CUDA > Accelerate (Apple AMX) > CPU (faer).
     """
     skills = []
     has_gp = False
@@ -339,11 +329,11 @@ def _detect_skills(
 
     if has_gp:
         cuda = use_cuda if use_cuda is not None else _cuda_available()
-        mlx = use_mlx if use_mlx is not None else _mlx_available()
+        accelerate = use_accelerate if use_accelerate is not None else _accelerate_available()
         if cuda:
             skills.append("gp_cuda")
-        elif mlx:
-            skills.append("gp_mlx")
+        elif accelerate:
+            skills.append("gp_accelerate")
         else:
             skills.append("gp")
 
@@ -379,7 +369,12 @@ def _build_system_prompt(skills: list[str]) -> str:
 _SKILL_CARGO_DEPS: dict[str, dict[str, str]] = {
     "gp": {"faer": "0.24"},
     "gp_cuda": {"cudarc": '{ version = "0.12", features = ["cublas", "cusolver"] }'},
-    "gp_mlx": {"mlx-rs": '0.25'},
+    "gp_accelerate": {},
+}
+
+# Optional build.rs content per skill (for linking system frameworks)
+_SKILL_BUILD_RS: dict[str, str] = {
+    "gp_accelerate": 'fn main() { println!("cargo:rustc-link-lib=framework=Accelerate"); }',
 }
 
 
@@ -428,7 +423,7 @@ def compile_model(
     build_dir: str | Path | None = None,
     verbose: bool = True,
     use_cuda: bool | None = None,
-    use_mlx: bool | None = None,
+    use_accelerate: bool | None = None,
 ) -> CompilationResult:
     """Compile a PyMC model to optimized Rust via an agentic Claude loop.
 
@@ -468,15 +463,18 @@ def compile_model(
         print(f"  {ctx.n_params} parameters, {len(prompt)} char prompt")
 
     # Detect model-specific skills and build augmented system prompt
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_mlx=use_mlx)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate)
     system_prompt = _build_system_prompt(skills)
     if verbose and skills:
         print(f"  Skills loaded: {', '.join(skills)}")
 
-    # Collect extra Cargo dependencies from skills
+    # Collect extra Cargo dependencies and build.rs from skills
     extra_deps: dict[str, str] = {}
+    build_rs: str | None = None
     for skill_name in skills:
         extra_deps.update(_SKILL_CARGO_DEPS.get(skill_name, {}))
+        if skill_name in _SKILL_BUILD_RS:
+            build_rs = _SKILL_BUILD_RS[skill_name]
 
     # Step 2: Set up build directory and write data
     if build_dir:
@@ -485,7 +483,7 @@ def compile_model(
     else:
         build_path = Path(tempfile.mkdtemp(prefix="pymc_rust_"))
 
-    _setup_rust_project(build_path, ctx, extra_cargo_deps=extra_deps)
+    _setup_rust_project(build_path, ctx, extra_cargo_deps=extra_deps, build_rs=build_rs)
 
     if verbose:
         print(f"  Build dir: {build_path}")
@@ -856,6 +854,7 @@ def _generate_data_rs(ctx) -> str:
 
 def _setup_rust_project(
     build_path: Path, ctx, extra_cargo_deps: dict[str, str] | None = None,
+    build_rs: str | None = None,
 ):
     """Create the Rust project structure with pre-generated data."""
     src_dir = build_path / "src"
@@ -892,6 +891,10 @@ name = "bench"
 path = "src/bench.rs"
 """
     (build_path / "Cargo.toml").write_text(cargo_toml)
+
+    # Write build.rs if needed (e.g., for linking system frameworks)
+    if build_rs:
+        (build_path / "build.rs").write_text(build_rs)
 
     # Write data module (exact values, no LLM rounding)
     data_rs = _generate_data_rs(ctx)
@@ -1110,7 +1113,7 @@ def optimize_model(
     model_name: str = "claude-sonnet-4-20250514",
     verbose: bool = True,
     use_cuda: bool | None = None,
-    use_mlx: bool | None = None,
+    use_accelerate: bool | None = None,
 ) -> CompilationResult:
     """Optimize an already-compiled model's Rust code for speed.
 
@@ -1190,7 +1193,7 @@ def optimize_model(
         print(f"\nStarting optimization loop (build_dir={build_path})...")
 
     # Detect skills for system prompt augmentation
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_mlx=use_mlx)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate)
     system_prompt = OPTIMIZE_SYSTEM_PROMPT
     for skill_name in skills:
         content = _load_skill(skill_name)

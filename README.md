@@ -20,13 +20,13 @@ Source (PyMC/Stan) → Extract logp + validation points → Claude agent loop �
 The agent has four tools: `write_rust_code`, `cargo_build`, `validate_logp`, and `read_file`. It loops until the output compiles and validates correctly. Model-specific "skills" are detected automatically:
 
 - **GP (CPU)**: Linear algebra via faer (Cholesky, solves, inverses)
+- **GP (Accelerate)**: Apple Accelerate framework (AMX coprocessor) for Apple Silicon
 - **GP (CUDA)**: GPU-accelerated via cudarc + cuSOLVER for NVIDIA GPUs
-- **GP (MLX)**: GPU-accelerated via mlx-rs + Metal for Apple Silicon
 - **ZeroSumNormal**: ZeroSum transform formulas and constraint handling
 - **Stan → Rust**: Stan model extraction via BridgeStan
 - **Stan → PyMC**: Distribution mappings, idiom translation, constraint handling
 
-Hardware is auto-detected: CUDA → MLX → CPU fallback.
+Hardware is auto-detected: CUDA → Accelerate (Apple Silicon) → CPU fallback.
 
 ## Benchmarks
 
@@ -52,6 +52,17 @@ Rust vs nutpie's Numba backend (500K evaluations, lower is better):
 | GP regression (3 params) | 116.57 | 35.31 | **3.3x** |
 
 Numba column = `numba.cfunc` called from Rust in a tight loop (how nutpie actually works). The AI-compiled Rust is 3-7x faster across all models.
+
+### Apple Accelerate (AMX coprocessor) acceleration
+
+For GP models on Apple Silicon, the compiler auto-detects the platform and uses Apple's Accelerate framework via direct LAPACK FFI (`dpotrf`, `dpotrs`, `dpotri`). This leverages the AMX coprocessor for hardware-accelerated matrix operations in full f64 precision. Benchmarks on M4 Max, N=200 GP:
+
+| Backend | µs/eval | Speedup vs faer |
+|---|---|---|
+| Rust + faer (pure Rust) | 487 | 1.0x |
+| Rust + Accelerate (AMX) | 366 | **1.33x** |
+
+No extra crate dependencies needed — Accelerate is linked via `build.rs` to the system framework.
 
 ## Quick start
 
@@ -106,12 +117,12 @@ pymc_rust_compiler/
 ├── nutpie_bridge.py  # nutpie integration: compiled Rust → nutpie.sample()
 ├── benchmark.py      # logp eval benchmarks: Rust vs Numba (jit + cfunc)
 └── skills/           # Model-specific knowledge for the AI agent
-    ├── gp.md         # CPU GP (faer Cholesky)
-    ├── gp_cuda.md    # NVIDIA GPU GP (cudarc + cuSOLVER)
-    ├── gp_mlx.md     # Apple Silicon GP (mlx-rs + Metal)
+    ├── gp.md              # CPU GP (faer Cholesky)
+    ├── gp_accelerate.md   # Apple Silicon GP (Accelerate LAPACK / AMX)
+    ├── gp_cuda.md         # NVIDIA GPU GP (cudarc + cuSOLVER)
     ├── zerosumnormal.md
-    ├── stan.md       # Stan → Rust translation knowledge
-    └── stan_to_pymc.md  # Stan → PyMC translation knowledge
+    ├── stan.md            # Stan → Rust translation knowledge
+    └── stan_to_pymc.md    # Stan → PyMC translation knowledge
 
 rust_template/      # Template Rust project (Cargo.toml, data loading, validation)
 bench_runner/       # Rust lib for calling Numba cfunc from Rust (like nutpie)
