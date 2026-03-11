@@ -358,6 +358,147 @@ beta1 = pm.Deterministic("beta1", beta1_raw * (1 - alpha1))
 pm.Potential("beta1_jacobian", pt.log(1 - alpha1))
 ```
 
+## Automatic Transforms in PyMC
+
+A key conceptual difference: Stan explicitly defines parameters separately from their
+distributions, requiring manual constraint specification. PyMC implicitly creates
+parameters when named variables are defined and **automatically applies appropriate
+transforms** based on distribution domains.
+
+For example, `pm.Exponential("x", 1)` automatically applies a log transform because
+exponential requires positive values.
+
+```python
+# Inspect what transform PyMC chose
+pymc_model.rvs_to_transforms[x]  # e.g. LogTransform
+pymc_model.rvs_to_values[x]      # internal parameter name
+
+# Override the default transform
+x = pm.Exponential("x", 1, default_transform=None)
+```
+
+### Jacobian Corrections
+
+Both libraries apply Jacobian corrections by default when transforming parameters. This
+accounts for the change-of-variable effect on the prior density. You can disable this:
+
+**Stan:**
+```python
+stan_model.log_prob(values, adjust_transform=False)
+```
+
+**PyMC:**
+```python
+pymc_model.compile_logp(jacobian=False)
+```
+
+## Logp Validation: Compare Differences, Not Absolutes
+
+Stan drops normalizing constants by default; PyMC does not. When validating that a
+translated model matches, **do not compare absolute logp values**. Instead, evaluate at
+several different parameter points and check that the **differences** are the same:
+
+```python
+# Evaluate logp at two points
+logp_stan_a, logp_stan_b = ...
+logp_pymc_a, logp_pymc_b = ...
+
+# These should match (up to numerical precision)
+assert np.isclose(logp_stan_a - logp_stan_b, logp_pymc_a - logp_pymc_b)
+```
+
+## Multiple Densities on One Parameter (CustomDist and Potential)
+
+Stan allows assigning multiple `~` statements to the same parameter (adding logp terms).
+PyMC's one-parameter-one-distribution design requires workarounds.
+
+### Option 1: CustomDist (for component-wise different distributions)
+
+```python
+def custom_dist_graph(_):
+    return pm.math.concatenate([
+        pm.Exponential.dist(1, shape=(2,)),
+        pm.HalfNormal.dist(1, shape=(1,))
+    ])
+
+x = pm.CustomDist("x", dist=custom_dist_graph, transform=pm.distributions.transforms.log)
+```
+
+### Option 2: Potential (add arbitrary logp terms)
+
+```python
+pm.Potential("extra_density", pm.logp(pm.Normal.dist(0, 1), x))
+```
+
+**Caveat:** Potentials are ignored during prior/posterior predictive sampling. This can
+lead to invalid or biased predictive samples.
+
+### Stan-style Model in PyMC (Flat + Potentials)
+
+For complex models where the Stan pattern is clearer, you can replicate it directly:
+
+```python
+with pm.Model() as model:
+    x = pm.Flat("x", shape=(3,), default_transform=pm.distributions.transforms.log)
+    pm.Potential("prior1", pm.logp(pm.Exponential.dist(1), x[:2]))
+    pm.Potential("prior2", pm.logp(pm.Normal.dist(0, 1), x[2]))
+    pm.Potential("likelihood", pm.logp(pm.Normal.dist(0, x + 1), data))
+```
+
+## Preferred Way to Compute logp
+
+Use `pm.logp()` rather than calling `Distribution.logp()` directly — it works
+universally across all distributions and parametrizations:
+
+```python
+from pymc import logp
+
+# Preferred
+logp(pm.Normal.dist(0, 1), x)
+
+# Also works but less universal
+pm.Normal.logp(x, 0, 1)
+```
+
+## Forward Sampling with draw()
+
+PyMC can draw forward samples from the random graph without running a sampler. Stan
+requires implementing equivalent sampling manually in `generated_quantities` blocks.
+
+```python
+from pymc import draw
+
+draw(x)                                    # single variable
+draw([x, y])                               # multiple variables
+draw(y, givens={x: posterior_sample})       # posterior predictive
+```
+
+## Censored Distributions
+
+Stan's truncation syntax `T[lower, upper]` maps to `pm.Censored` or
+`pm.TruncatedNormal` etc. Use `pm.Censored` for the general case:
+
+```stan
+y ~ normal(mu, sigma) T[0,];
+```
+```python
+y = pm.Censored("y", pm.Normal.dist(mu=mu, sigma=sigma), lower=0, upper=None,
+                observed=y_data)
+```
+
+Prefer `pm.Censored` over `pm.Potential` with manual logp for censored data — it
+handles forward sampling correctly.
+
+## Use Idiomatic PyMC Distributions
+
+When translating, prefer PyMC's built-in distributions over manual `pm.Potential`
+constructs:
+
+- Use `pm.HalfNormal` instead of `pm.Normal` + lower bound potential
+- Use `pm.Censored` for censored/truncated data
+- Use `pm.ZeroInflatedPoisson`, `pm.Hurdle*`, etc. for mixture-type likelihoods
+- Only fall back to `pm.Potential` when there is no clean distribution equivalent
+
 ## Important Conventions
 
 1. **Indexing**: Stan is 1-based, Python/PyMC is 0-based. Adjust all index arrays.
