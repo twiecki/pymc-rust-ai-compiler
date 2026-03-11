@@ -237,7 +237,11 @@ CRITICAL RULES:
    - `pub fn forward_with_grad(input: &[f32], param_name: &str) -> (Vec<f32>, Vec<f32>)` —
      forward pass + gradient of sum(output) w.r.t. the named parameter
    - Parameters should be embedded as `const` arrays (the model is baked in)
-2. Use pure Rust — no external crates, no unsafe. Just std.
+2. Start with pure Rust (no external crates) for simple models. But if you struggle with
+   a complex operation or keep failing, you are ENCOURAGED to add crates via the
+   `add_cargo_dependency` tool. Good candidates: nalgebra (matrix ops), ndarray (N-d arrays),
+   or any well-maintained crate that solves your problem. Don't waste iterations on buggy
+   hand-rolled implementations when a crate exists.
 3. Implement activation functions manually:
    - ReLU: `if x > 0.0 { x } else { 0.0 }`
    - Sigmoid: `1.0 / (1.0 + (-x).exp())`
@@ -354,6 +358,34 @@ TOOLS = [
                 },
             },
             "required": ["path"],
+        },
+    },
+    {
+        "name": "add_cargo_dependency",
+        "description": (
+            "Add a crate dependency to Cargo.toml. Use this when you want to leverage "
+            "an external Rust library instead of implementing something from scratch. "
+            "The dependency is appended to the [dependencies] section. "
+            "Examples: name='nalgebra' version='0.33' or name='ndarray' version='0.16' "
+            "or name='serde' version='1' features='derive'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Crate name (e.g., 'nalgebra', 'ndarray')",
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Version requirement (e.g., '0.33', '1', '0.16')",
+                },
+                "features": {
+                    "type": "string",
+                    "description": "Optional comma-separated features to enable (e.g., 'derive' or 'std,alloc')",
+                },
+            },
+            "required": ["name", "version"],
         },
     },
 ]
@@ -563,6 +595,8 @@ def _execute_tool(
         return _tool_read_source(state, verbose)
     elif name == "read_file":
         return _tool_read_file(input_data, state, verbose)
+    elif name == "add_cargo_dependency":
+        return _tool_add_cargo_dependency(input_data, state, verbose)
     else:
         return f"Unknown tool: {name}"
 
@@ -834,6 +868,62 @@ def _tool_read_file(
     if verbose:
         print(f"  [read_file] {rel_path}: {len(content)} chars")
     return content
+
+
+def _tool_add_cargo_dependency(
+    input_data: dict, state: _AgentState, verbose: bool,
+) -> str:
+    """Add a crate dependency to Cargo.toml."""
+    name = input_data.get("name", "")
+    version = input_data.get("version", "")
+    features = input_data.get("features", "")
+
+    if not name or not version:
+        return "Error: 'name' and 'version' are required"
+
+    cargo_path = state.build_path / "Cargo.toml"
+    if not cargo_path.exists():
+        return "Error: Cargo.toml not found"
+
+    cargo_content = cargo_path.read_text()
+
+    # Build the dependency line
+    if features:
+        feature_list = ", ".join(f'"{f.strip()}"' for f in features.split(","))
+        dep_line = f'{name} = {{ version = "{version}", features = [{feature_list}] }}'
+    else:
+        dep_line = f'{name} = "{version}"'
+
+    # Check if dependency already exists
+    if f"\n{name} " in cargo_content or f"\n{name}=" in cargo_content:
+        return f"Dependency '{name}' already exists in Cargo.toml"
+
+    # Insert after [dependencies] section
+    lines = cargo_content.split("\n")
+    insert_idx = None
+    in_deps = False
+    for i, line in enumerate(lines):
+        if line.strip() == "[dependencies]":
+            in_deps = True
+            continue
+        if in_deps:
+            if line.strip().startswith("["):
+                insert_idx = i
+                break
+            if not line.strip():
+                continue
+            insert_idx = i + 1
+
+    if insert_idx is None:
+        insert_idx = len(lines)
+
+    lines.insert(insert_idx, dep_line)
+    cargo_path.write_text("\n".join(lines))
+
+    if verbose:
+        print(f"  [add_cargo_dependency] Added {dep_line}")
+
+    return f"Added dependency: {dep_line}\nRun cargo_build to download and compile it."
 
 
 # ── Agent loop ───────────────────────────────────────────────────────────────

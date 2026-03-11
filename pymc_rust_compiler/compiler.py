@@ -53,6 +53,23 @@ CRITICAL RULES:
 5. Use efficient single-pass computation where possible
 6. All data (observed + covariates/predictors) is provided in `data.rs` — use `use crate::data::*;` to access it. Do NOT embed data arrays in your generated code.
 
+USING RUST CRATES (LIBRARIES):
+You are ENCOURAGED to use external Rust crates when they help. Do NOT try to implement
+everything from scratch — the Rust ecosystem has excellent libraries for many tasks.
+Use the `add_cargo_dependency` tool to add crates to Cargo.toml before using them in code.
+
+Good reasons to add a crate:
+- Linear algebra (nalgebra, faer, ndarray) — don't hand-roll matrix ops
+- Special math functions (statrs, special) — distributions, gamma, beta, erf, etc.
+- Numerical routines (argmin, levenberg-marquardt) — optimization, root-finding
+- Serialization (serde, serde_json) — data loading
+- Any well-maintained crate that simplifies your implementation
+
+If you hit a wall implementing something from scratch (e.g., a Cholesky decomposition,
+special function, or complex numerical algorithm), STOP and add an appropriate crate
+instead. Getting creative with crate selection is much better than struggling with
+a buggy hand-rolled implementation.
+
 IMPORTANT - OBSERVED DATA LIKELIHOOD:
 The logp MUST include the log-likelihood of ALL observed data points. This is typically the
 dominant term. For example, if y ~ Normal(mu, sigma) is observed with N data points, the logp
@@ -278,6 +295,34 @@ TOOLS = [
                 },
             },
             "required": ["path"],
+        },
+    },
+    {
+        "name": "add_cargo_dependency",
+        "description": (
+            "Add a crate dependency to Cargo.toml. Use this when you want to leverage "
+            "an external Rust library instead of implementing something from scratch. "
+            "The dependency is appended to the [dependencies] section. "
+            "Examples: name='nalgebra' version='0.33' or name='statrs' version='0.17' "
+            "or name='serde' version='1' features='derive'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Crate name (e.g., 'nalgebra', 'statrs', 'ndarray')",
+                },
+                "version": {
+                    "type": "string",
+                    "description": "Version requirement (e.g., '0.33', '1', '0.17')",
+                },
+                "features": {
+                    "type": "string",
+                    "description": "Optional comma-separated features to enable (e.g., 'derive' or 'std,alloc')",
+                },
+            },
+            "required": ["name", "version"],
         },
     },
 ]
@@ -621,6 +666,8 @@ def _execute_tool(
         return _tool_validate_logp(state, verbose)
     elif name == "read_file":
         return _tool_read_file(input_data, state, verbose)
+    elif name == "add_cargo_dependency":
+        return _tool_add_cargo_dependency(input_data, state, verbose)
     else:
         return f"Unknown tool: {name}"
 
@@ -852,6 +899,66 @@ def _tool_read_file(
         print(f"  [read_file] {rel_path} ({len(content)} chars)")
 
     return content
+
+
+def _tool_add_cargo_dependency(
+    input_data: dict, state: _AgentState, verbose: bool
+) -> str:
+    """Add a crate dependency to Cargo.toml."""
+    name = input_data.get("name", "")
+    version = input_data.get("version", "")
+    features = input_data.get("features", "")
+
+    if not name or not version:
+        return "Error: 'name' and 'version' are required"
+
+    cargo_path = state.build_path / "Cargo.toml"
+    if not cargo_path.exists():
+        return "Error: Cargo.toml not found"
+
+    cargo_content = cargo_path.read_text()
+
+    # Build the dependency line
+    if features:
+        feature_list = ", ".join(f'"{f.strip()}"' for f in features.split(","))
+        dep_line = f'{name} = {{ version = "{version}", features = [{feature_list}] }}'
+    else:
+        dep_line = f'{name} = "{version}"'
+
+    # Check if dependency already exists
+    if f"\n{name} " in cargo_content or f"\n{name}=" in cargo_content:
+        return f"Dependency '{name}' already exists in Cargo.toml"
+
+    # Insert after [dependencies] section (before the next section or EOF)
+    # Find the end of the [dependencies] block
+    lines = cargo_content.split("\n")
+    insert_idx = None
+    in_deps = False
+    for i, line in enumerate(lines):
+        if line.strip() == "[dependencies]":
+            in_deps = True
+            continue
+        if in_deps:
+            if line.strip().startswith("["):
+                # Next section — insert before it
+                insert_idx = i
+                break
+            if not line.strip():
+                # Empty line — could be end of deps, keep looking
+                continue
+            insert_idx = i + 1  # After last dependency line
+
+    if insert_idx is None:
+        # Append at end
+        insert_idx = len(lines)
+
+    lines.insert(insert_idx, dep_line)
+    cargo_path.write_text("\n".join(lines))
+
+    if verbose:
+        print(f"  [add_cargo_dependency] Added {dep_line}")
+
+    return f"Added dependency: {dep_line}\nRun cargo_build to download and compile it."
 
 
 def _generate_data_rs(ctx) -> str:
