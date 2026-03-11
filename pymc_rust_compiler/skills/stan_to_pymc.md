@@ -584,26 +584,39 @@ with pm.Model(coords=coords) as model:
     pm.Normal("y", mu=alpha[county_idx], sigma=sigma_y, observed=y_data, dims="obs")
 ```
 
-### Mutable coords for varying-size data
+### Coords and Data are mutable by default
 
-When a dimension might change size (e.g., for out-of-sample prediction), use
-`model.add_coord` with `mutable=True`:
+Coords and `pm.Data` are **mutable by default** in PyMC — there is no need to pass
+`mutable=True`. You can resize coords and swap data for out-of-sample prediction
+without any special flags:
 
 ```python
-with pm.Model() as model:
-    model.add_coord("obs", np.arange(N_train), mutable=True)
+with pm.Model(coords={"obs": np.arange(N_train)}) as model:
+    X = pm.Data("X", X_train, dims=("obs", "predictor"))
     # ...
-    # Later, for prediction:
-    pm.set_data({"X": X_test}, coords={"obs": np.arange(N_test)})
+
+# Later, for prediction — just set new data and coords:
+pm.set_data({"X": X_test}, coords={"obs": np.arange(N_test)})
 ```
 
-### When to use `shape` vs `dims`
+### Freezing coords and data with `freeze_dims_and_data`
 
-- **Prefer `dims`** for any parameter or observed variable with a meaningful semantic axis
-  (groups, predictors, time steps, categories, etc.)
-- **Fall back to `shape`** only for internal helper variables where naming adds no clarity
-- **Use `dims` on `pm.Deterministic` too** — transformed parameters benefit from labeled
-  axes just as much as priors do
+If you want to freeze existing mutable coords and data (e.g., to simplify the
+computation graph or generate more efficient compiled code), use:
+
+```python
+model.freeze_dims_and_data()
+```
+
+This converts all mutable coords and data containers into fixed constants, which can
+enable additional graph optimizations.
+
+### Always use `dims`, never `shape`
+
+- **Always use `dims`** for every parameter, observed variable, and `pm.Deterministic`.
+  `shape` is never needed — `dims` provides the same sizing while adding labeled axes.
+- Named dims produce cleaner InferenceData, better ArviZ plots, and catch shape
+  mismatches earlier.
 
 ## Important Conventions
 
