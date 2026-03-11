@@ -520,3 +520,184 @@ constructs:
    `sigma = sqrt(sigmasq)`.
 9. **binomial_logit**: Stan's `binomial_logit(n, alpha)` = `pm.Binomial("x", n=n, logit_p=alpha)`.
    Do NOT manually apply `invlogit` — use the `logit_p` parameter directly.
+
+## Vectorization: Prefer Array Operations Over Python Loops
+
+**This is critical for performance.** Stan models often use `for` loops; PyMC models should
+use vectorized numpy-like operations instead. Python `for` loops at model construction time
+unroll into enormous computation graphs (potentially 20x+ more nodes), causing slow
+compilation, slow sampling, and slow gradient computation.
+
+### Use `shape` or `dims` instead of creating distributions in a loop
+
+```python
+# WRONG — creates K separate graph nodes
+for k in range(K):
+    theta[k] = pm.Normal(f"theta_{k}", mu=mu_group, sigma=sigma_group)
+
+# CORRECT — single vectorized distribution
+theta = pm.Normal("theta", mu=mu_group, sigma=sigma_group, shape=K)
+
+# BEST — use dims for labeled axes
+theta = pm.Normal("theta", mu=mu_group, sigma=sigma_group, dims="group")
+```
+
+### Use array indexing instead of conditionals or loops to select parameters
+
+```stan
+// Stan
+for (n in 1:N)
+    y[n] ~ normal(alpha[group[n]], sigma);
+```
+```python
+# PyMC — vectorized, no loop
+pm.Normal("y", mu=alpha[group_idx], sigma=sigma, observed=y_data)
+```
+
+### Use `pt.dot`, `pt.sum`, `pt.stack` for linear algebra
+
+```stan
+// Stan
+real total = 0;
+for (k in 1:K)
+    total += beta[k] * X[n, k];
+```
+```python
+# PyMC — single dot product
+mu = pt.dot(X_data, beta)
+```
+
+## Looping with `pytensor.scan` (Sequential Dependencies)
+
+When a computation has **true sequential dependencies** (step `t` depends on step `t-1`),
+use `pytensor.scan` instead of a Python `for` loop. This compiles the loop into the
+computation graph rather than unrolling it.
+
+### When to use `scan` vs. vectorization
+
+- **Vectorize** when observations are conditionally independent given parameters (the vast majority of models)
+- **Use `scan`** only for true recurrences: AR/MA/state-space models, ODEs, reinforcement learning
+- **Use `pm.AR`** for standard AR(p) models — it wraps scan for you
+
+### Stan for-loop → pytensor.scan
+
+```stan
+// Stan: AR(1) in transformed parameters
+transformed parameters {
+  vector[T] mu;
+  mu[1] = alpha;
+  for (t in 2:T)
+    mu[t] = alpha + rho * y[t-1];
+}
+```
+```python
+# PyMC: use scan for sequential dependency
+import pytensor
+
+def ar_step(y_prev, alpha, rho):
+    return alpha + rho * y_prev
+
+mu, _ = pytensor.scan(
+    fn=ar_step,
+    sequences=y_data[:-1],       # iterate over lagged data
+    outputs_info=None,           # no recurrent state needed here
+    non_sequences=[alpha, rho],  # parameters passed at every step
+)
+```
+
+### Scan argument ordering
+
+The inner function receives arguments in a **fixed order**:
+1. **Sequences** (time slices from `sequences`)
+2. **Previous outputs** (recurrent values from `outputs_info`)
+3. **Non-sequences** (constants)
+
+### AR(p) with recurrent state (multi-lag)
+
+```python
+def ar_step(x_tm2, x_tm1, rho):
+    mu = x_tm1 * rho[0] + x_tm2 * rho[1]
+    return mu
+
+mu_steps, _ = pytensor.scan(
+    fn=ar_step,
+    outputs_info=[{"initial": ar_init, "taps": range(-2, 0)}],
+    non_sequences=[rho],
+    n_steps=T - 2,
+)
+```
+
+### `outputs_info` patterns
+
+| Pattern | `outputs_info` | Meaning |
+|---------|---------------|---------|
+| No recurrence (map) | `None` | Pure map over sequences |
+| Single previous step | `initial_value` | `fn` receives `x_{t-1}` |
+| Multiple taps AR(p) | `{"initial": init, "taps": range(-p, 0)}` | `fn` receives `x_{t-p}, ..., x_{t-1}` |
+
+### Scan gotchas
+
+- **Argument order is rigid**: sequences → recurrent outputs → non-sequences. Mismatching is the most common bug.
+- **Shape/dtype of `outputs_info`** must match the return value of `fn`.
+- Use `strict=True` to catch undeclared shared variables.
+- For stochastic steps inside scan (e.g., random innovations), wrap with `pm.CustomDist` and use `collect_default_updates` from `pymc`.
+
+## Conditional Logic: `pt.switch` and `ifelse`
+
+**You cannot use Python `if/else` on symbolic PyTensor variables.** They are not concrete
+values at graph construction time. Use `pt.switch` or `ifelse` instead.
+
+```python
+# WRONG — evaluates at graph construction time, not sampling time
+x = pm.Normal("x", 0, 1)
+if x > 0:        # ERROR: x is symbolic, this doesn't work as intended
+    y = x ** 2
+else:
+    y = -x
+
+# CORRECT — stays in the computation graph
+y = pt.switch(x > 0, x**2, -x)
+```
+
+### `pt.switch` (element-wise, like `np.where`)
+
+Use for most conditional logic in PyMC models. Works element-wise on tensors.
+Evaluates both branches (not lazy).
+
+```stan
+// Stan: conditional in loop
+for (n in 1:N) {
+  if (y[n] == 0)
+    target += log_sum_exp(log(psi), log1m(psi) + poisson_lpmf(0 | lambda));
+  else
+    target += log1m(psi) + poisson_lpmf(y[n] | lambda);
+}
+```
+```python
+# PyMC: vectorized with pt.switch (no loop needed)
+logp_zero = pt.log(psi + (1 - psi) * pt.exp(pm.logp(pm.Poisson.dist(mu=lam), value)))
+logp_nonzero = pt.log(1 - psi) + pm.logp(pm.Poisson.dist(mu=lam), value)
+pm.Potential("lik", pt.sum(pt.switch(pt.eq(value, 0), logp_zero, logp_nonzero)))
+```
+
+### `ifelse` (scalar condition, lazy evaluation)
+
+Use only when you have a **scalar** boolean condition and the branches are expensive.
+Evaluates only the taken branch.
+
+```python
+from pytensor.ifelse import ifelse
+
+# Only evaluates the taken branch
+z = ifelse(pt.lt(a, b), expensive_branch_a, expensive_branch_b)
+```
+
+### Stan → PyMC conditional mapping
+
+| Stan idiom | PyMC equivalent |
+|---|---|
+| `condition ? a : b` (element-wise) | `pt.switch(condition, a, b)` |
+| `if (cond) { ... } else { ... }` | `pt.switch(cond, ...)` or `ifelse(cond, ...)` for scalar |
+| `target += (cond) ? lp1 : lp2` | `pm.Potential("name", pt.switch(cond, lp1, lp2))` |
+| Stan `for` loop (independent iterations) | Vectorize with `shape`/`dims` and array indexing |
+| Stan `for` loop (sequential dependency) | `pytensor.scan(...)` |
