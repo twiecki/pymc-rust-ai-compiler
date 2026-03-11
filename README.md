@@ -67,6 +67,18 @@ For GP models on Apple Silicon, the compiler auto-detects the platform and uses 
 
 No extra crate dependencies needed — Accelerate is linked via `build.rs` to the system framework.
 
+### Neural network inference: PyTorch → Rust
+
+minGPT-nano (3 layers, 3 heads, 48-dim embeddings) transpiled to zero-dependency Rust:
+
+| Backend | µs/call | Speedup |
+|---|---|---|
+| PyTorch (eager) | 660 | 1.0x |
+| Rust (transpiled) | 284 | **2.3x** |
+| Rust + Enzyme (forward+backward) | 899 | **3.1x** vs PyTorch fwd+bwd (2777 µs) |
+
+Forward pass numerical accuracy: max_diff = 5.36e-07. Enzyme gradients match PyTorch autograd to ~5e-7 (f32 precision).
+
 ## Quick start
 
 ```bash
@@ -113,6 +125,9 @@ python examples/pytorch_to_jax_mlp.py
 
 # PyTorch → Rust (zero-dependency inference binary)
 python examples/pytorch_to_rust_mlp.py
+
+# minGPT → Rust (transformer inference)
+python examples/mingpt_to_rust.py
 ```
 
 ## Architecture
