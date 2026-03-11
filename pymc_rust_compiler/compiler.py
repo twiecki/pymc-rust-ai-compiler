@@ -304,12 +304,15 @@ def _accelerate_available() -> bool:
 
 def _detect_skills(
     model: pm.Model, ctx, use_cuda: bool | None = None, use_accelerate: bool | None = None,
+    use_enzyme: bool | None = None,
 ) -> list[str]:
     """Detect which skills are needed based on model structure.
 
     Returns a list of skill names (matching filenames in skills/).
     If use_cuda/use_accelerate is None, auto-detect hardware availability.
     Priority: CUDA > Accelerate (Apple AMX) > CPU (faer).
+    If use_enzyme is True or None, include the enzyme skill so the agent
+    can choose between hand-written and Enzyme-generated gradients.
     """
     skills = []
     has_gp = False
@@ -342,6 +345,12 @@ def _detect_skills(
         if p.transform == "ZeroSumTransform":
             skills.append("zerosumnormal")
             break
+
+    # Enzyme autodiff: offer as an alternative gradient strategy.
+    # Skip for GP models (Enzyme can't differentiate through faer/external crates)
+    # and ZeroSumNormal (complex constraint transforms).
+    if use_enzyme is not False and not has_gp and "zerosumnormal" not in skills:
+        skills.append("enzyme")
 
     return skills
 
@@ -424,6 +433,7 @@ def compile_model(
     verbose: bool = True,
     use_cuda: bool | None = None,
     use_accelerate: bool | None = None,
+    use_enzyme: bool | None = None,
 ) -> CompilationResult:
     """Compile a PyMC model to optimized Rust via an agentic Claude loop.
 
@@ -438,6 +448,9 @@ def compile_model(
         model_name: Claude model to use.
         build_dir: Where to create the Rust project. Temp dir if None.
         verbose: Print progress.
+        use_enzyme: If True, always offer Enzyme autodiff skill. If False,
+            never offer it. If None (default), auto-detect based on model
+            complexity (skip for GP/ZeroSumNormal).
 
     Returns:
         CompilationResult with the generated Rust code and validation status.
@@ -463,7 +476,7 @@ def compile_model(
         print(f"  {ctx.n_params} parameters, {len(prompt)} char prompt")
 
     # Detect model-specific skills and build augmented system prompt
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate, use_enzyme=use_enzyme)
     system_prompt = _build_system_prompt(skills)
     if verbose and skills:
         print(f"  Skills loaded: {', '.join(skills)}")
@@ -623,6 +636,21 @@ def _tool_write_rust_code(
     gen_path = state.build_path / "src" / "generated.rs"
     gen_path.write_text(code)
 
+    # If the agent chose Enzyme, set up nightly toolchain and update lib.rs
+    if "#![feature(autodiff)]" in code or "std::autodiff::autodiff" in code:
+        _setup_enzyme_toolchain(state.build_path)
+        # Move feature flag to lib.rs (crate root) if agent put it in generated.rs
+        if "#![feature(autodiff)]" in code:
+            code_clean = code.replace("#![feature(autodiff)]\n", "").replace(
+                "#![feature(autodiff)]", ""
+            )
+            gen_path.write_text(code_clean)
+        lib_rs = (
+            "#![feature(autodiff)]\n"
+            "pub mod data;\npub mod generated;\npub use generated::*;\n"
+        )
+        (state.build_path / "src" / "lib.rs").write_text(lib_rs)
+
     if verbose:
         print(f"  [write_rust_code] Wrote {len(code)} chars to generated.rs")
 
@@ -634,8 +662,15 @@ def _tool_cargo_build(state: _AgentState, verbose: bool) -> str:
     state.builds += 1
     t0 = time.time()
 
+    # Use nightly toolchain if Enzyme is active (rust-toolchain.toml present)
+    toolchain_file = state.build_path / "rust-toolchain.toml"
+    if toolchain_file.exists():
+        cmd = ["cargo", "+nightly", "build", "--release"]
+    else:
+        cmd = ["cargo", "build", "--release"]
+
     result = subprocess.run(
-        ["cargo", "build", "--release"],
+        cmd,
         cwd=state.build_path,
         capture_output=True,
         text=True,
@@ -850,6 +885,16 @@ def _generate_data_rs(ctx) -> str:
             )
 
     return "\n".join(lines)
+
+
+def _setup_enzyme_toolchain(build_path: Path) -> None:
+    """Write a rust-toolchain.toml that pins nightly (required for Enzyme)."""
+    toolchain_file = build_path / "rust-toolchain.toml"
+    if toolchain_file.exists():
+        return
+    toolchain_file.write_text(
+        '[toolchain]\nchannel = "nightly"\n'
+    )
 
 
 def _setup_rust_project(
@@ -1114,6 +1159,7 @@ def optimize_model(
     verbose: bool = True,
     use_cuda: bool | None = None,
     use_accelerate: bool | None = None,
+    use_enzyme: bool | None = None,
 ) -> CompilationResult:
     """Optimize an already-compiled model's Rust code for speed.
 
@@ -1193,7 +1239,7 @@ def optimize_model(
         print(f"\nStarting optimization loop (build_dir={build_path})...")
 
     # Detect skills for system prompt augmentation
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate)
+    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate, use_enzyme=use_enzyme)
     system_prompt = OPTIMIZE_SYSTEM_PROMPT
     for skill_name in skills:
         content = _load_skill(skill_name)
