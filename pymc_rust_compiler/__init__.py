@@ -22,6 +22,10 @@ from pymc_rust_compiler.pytorch_exporter import (
     PytorchModelExporter,
     export_pytorch_model,
 )
+from pymc_rust_compiler.pytorch_rust_transpiler import (
+    transpile_pytorch_to_rust,
+    RustTranspileResult,
+)
 
 # PyMC/Stan imports are lazy — they pull in heavy deps (pymc, bridgestan)
 if TYPE_CHECKING:
@@ -84,6 +88,9 @@ __all__ = [
     "export_jax_model",
     "PytorchModelExporter",
     "export_pytorch_model",
+    # PyTorch → Rust
+    "transpile_pytorch_to_rust",
+    "RustTranspileResult",
 ]
 
 

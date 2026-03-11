@@ -27,6 +27,7 @@ The agent has four tools: `write_rust_code`, `cargo_build`, `validate_logp`, and
 - **Stan → PyMC**: Distribution mappings, idiom translation, constraint handling
 - **JAX → PyTorch**: Functional-to-stateful translation, op mapping, weight transposition
 - **PyTorch → JAX**: Stateful-to-functional translation, pure function extraction
+- **PyTorch → Rust**: Neural net to zero-dependency Rust binary, forward + gradient validation
 
 Hardware is auto-detected: CUDA → Accelerate (Apple Silicon) → CPU fallback.
 
@@ -109,6 +110,9 @@ python examples/stan_pymc_02_hierarchical.py
 # JAX ↔ PyTorch transpilation
 python examples/jax_to_pytorch_mlp.py
 python examples/pytorch_to_jax_mlp.py
+
+# PyTorch → Rust (zero-dependency inference binary)
+python examples/pytorch_to_rust_mlp.py
 ```
 
 ## Architecture
@@ -122,7 +126,8 @@ pymc_rust_compiler/
 ├── stan_to_pymc.py           # Stan → PyMC agentic transpiler
 ├── jax_exporter.py           # Extract model info from JAX functions
 ├── pytorch_exporter.py       # Extract model info from PyTorch modules
-├── jax_pytorch_transpiler.py # JAX ↔ PyTorch agentic transpiler
+├── jax_pytorch_transpiler.py  # JAX ↔ PyTorch agentic transpiler
+├── pytorch_rust_transpiler.py # PyTorch → Rust agentic transpiler (zero-dep inference)
 ├── nutpie_bridge.py          # nutpie integration: compiled Rust → nutpie.sample()
 ├── benchmark.py              # logp eval benchmarks: Rust vs Numba (jit + cfunc)
 └── skills/                   # Model-specific knowledge for the AI agent
@@ -133,7 +138,8 @@ pymc_rust_compiler/
     ├── stan.md            # Stan → Rust translation knowledge
     ├── stan_to_pymc.md    # Stan → PyMC translation knowledge
     ├── jax_to_pytorch.md  # JAX → PyTorch op mapping + idioms
-    └── pytorch_to_jax.md  # PyTorch → JAX op mapping + idioms
+    ├── pytorch_to_jax.md  # PyTorch → JAX op mapping + idioms
+    └── pytorch_to_rust.md # PyTorch → Rust: matmul, activations, backprop
 
 rust_template/      # Template Rust project (Cargo.toml, data loading, validation)
 bench_runner/       # Rust lib for calling Numba cfunc from Rust (like nutpie)
@@ -200,4 +206,29 @@ result = transpile_pytorch_to_jax(MLP(), sample_input=torch.randn(1, 4))
 if result.success:
     jax_params, forward_fn = result.get_model(param_data)
     output = forward_fn(jax_params, jnp.ones((1, 4)))
+```
+
+## PyTorch → Rust Transpiler
+
+The killer feature for inference deployment. Takes a PyTorch `nn.Module` and generates a **zero-dependency Rust binary** — no ML framework, no Python runtime, just raw f32 math compiled to native code. Parameters are baked in as `const` arrays.
+
+The agent uses the same agentic architecture with tools: `write_code` → `cargo_build` → `validate_model` (forward pass + gradient matching). The generated Rust code includes both `forward()` and manual backpropagation for gradient validation.
+
+```python
+import torch.nn as nn
+from pymc_rust_compiler import transpile_pytorch_to_rust
+
+class MLP(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.fc1 = nn.Linear(4, 8)
+        self.fc2 = nn.Linear(8, 2)
+
+    def forward(self, x):
+        return self.fc2(torch.relu(self.fc1(x)))
+
+result = transpile_pytorch_to_rust(MLP(), sample_input=torch.randn(1, 4))
+if result.success:
+    print(f"Binary at: {result.binary_path}")  # Zero-dependency native binary
+    result.save("model.rs")                     # Save the generated Rust code
 ```
