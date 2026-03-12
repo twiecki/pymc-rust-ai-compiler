@@ -48,15 +48,18 @@ def main():
     )
 
     if result.success:
-        print(f"\nTranspilation successful!")
+        print("\nTranspilation successful!")
         print(f"  Tool calls: {result.n_tool_calls}")
         print(f"  Tokens: {result.token_usage['total_tokens']}")
-        print(f"\nGenerated JAX code:")
+        print("\nGenerated JAX code:")
         print(result.generated_code)
 
         # Test the generated model
         import jax.numpy as jnp
-        param_data = {name: param.detach().numpy() for name, param in model.named_parameters()}
+
+        param_data = {
+            name: param.detach().numpy() for name, param in model.named_parameters()
+        }
         jax_params, forward_fn = result.get_model(param_data)
         jax_out = forward_fn(jax_params, jnp.array(x.numpy()))
         print(f"\nJAX output:\n{np.asarray(jax_out)}")

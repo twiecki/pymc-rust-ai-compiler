@@ -10,7 +10,6 @@ This script:
 import sys
 import time
 
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -20,9 +19,16 @@ from torch.nn import functional as F
 
 class NewGELU(nn.Module):
     def forward(self, x):
-        return 0.5 * x * (1.0 + torch.tanh(
-            (2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))
-        ))
+        return (
+            0.5
+            * x
+            * (
+                1.0
+                + torch.tanh(
+                    (2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))
+                )
+            )
+        )
 
 
 class CausalSelfAttention(nn.Module):
@@ -32,7 +38,9 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(n_embd, n_embd)
         self.register_buffer(
             "bias",
-            torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size),
+            torch.tril(torch.ones(block_size, block_size)).view(
+                1, 1, block_size, block_size
+            ),
         )
         self.n_head = n_head
         self.n_embd = n_embd
@@ -82,9 +90,9 @@ class MinGPTCore(nn.Module):
         super().__init__()
         self.n_embd = n_embd
         self.seq_len = block_size  # fixed sequence length for transpilation
-        self.blocks = nn.ModuleList([
-            TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)
-        ])
+        self.blocks = nn.ModuleList(
+            [TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)]
+        )
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
 
@@ -117,7 +125,7 @@ def create_mingpt_nano():
     n_params = sum(p.numel() for p in model.parameters())
     print(f"MinGPT-nano: {n_layer} layers, {n_head} heads, {n_embd} embd")
     print(f"  vocab_size={vocab_size}, block_size={block_size}")
-    print(f"  Parameters: {n_params:,} ({n_params/1e3:.1f}K)")
+    print(f"  Parameters: {n_params:,} ({n_params / 1e3:.1f}K)")
 
     sample_input = torch.randn(block_size * n_embd)
     return model, sample_input
@@ -169,9 +177,9 @@ def benchmark_rust(binary_path, sample_input, n_warmup=100, n_runs=10000):
         print(f"Rust benchmark error: {result.stderr[:500]}")
         return None
 
-    lines = [l for l in result.stdout.strip().split("\n") if l.strip()]
+    lines = [line for line in result.stdout.strip().split("\n") if line.strip()]
     # Skip warmup lines
-    run_lines = lines[n_warmup:]
+    lines[n_warmup:]
 
     # The total elapsed includes warmup, so estimate per-call from total runs
     us_per_call = (elapsed / (n_warmup + n_runs)) * 1e6
@@ -318,7 +326,7 @@ class MinGPTCore(nn.Module):
     if result.success:
         # Save the generated Rust code
         result.save("mingpt_generated.rs")
-        print(f"\n  Generated Rust code saved to mingpt_generated.rs")
+        print("\n  Generated Rust code saved to mingpt_generated.rs")
         print(f"  Build dir: {result.build_dir}")
 
         # Step 4: Benchmark Rust
@@ -336,7 +344,9 @@ class MinGPTCore(nn.Module):
                 print(f"  PyTorch:  {pytorch_us:.1f} µs/call")
                 print(f"  Rust:     {rust_us:.1f} µs/call")
                 speedup = pytorch_us / rust_us
-                print(f"  Speedup:  {speedup:.1f}x {'faster' if speedup > 1 else 'slower'}")
+                print(
+                    f"  Speedup:  {speedup:.1f}x {'faster' if speedup > 1 else 'slower'}"
+                )
             else:
                 print("  Rust benchmark failed!")
         else:

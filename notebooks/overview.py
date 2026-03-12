@@ -87,12 +87,16 @@ def _():
         beta = pm.Normal("beta", mu=0, sigma=10)
         sigma = pm.HalfNormal("sigma", sigma=5)
         mu = alpha + beta * x_data
-        y = pm.Normal("y", mu=mu, sigma=sigma, observed=y_data)
+        pm.Normal("y", mu=mu, sigma=sigma, observed=y_data)
 
-    print(f"Model: {len(linreg_model.free_RVs)} free parameters, "
-          f"{len(linreg_model.observed_RVs)} observed")
+    print(
+        f"Model: {len(linreg_model.free_RVs)} free parameters, "
+        f"{len(linreg_model.observed_RVs)} observed"
+    )
     print(f"Parameters: {[rv.name for rv in linreg_model.free_RVs]}")
-    print(f"Transforms: {[type(linreg_model.rvs_to_transforms.get(rv)).__name__ for rv in linreg_model.free_RVs]}")
+    print(
+        f"Transforms: {[type(linreg_model.rvs_to_transforms.get(rv)).__name__ for rv in linreg_model.free_RVs]}"
+    )
     return (linreg_model,)
 
 
@@ -129,15 +133,19 @@ def _(linreg_model):
         transform_str = f" [{p.transform}]" if p.transform else ""
         print(f"  {p.name}: shape={p.shape}, size={p.size}{transform_str}")
 
-    print(f"\nObserved data:")
+    print("\nObserved data:")
     for name2, info2 in ctx.observed_data.items():
-        print(f"  {name2}: n={info2['n']}, range=[{info2['min']:.3f}, {info2['max']:.3f}]")
+        print(
+            f"  {name2}: n={info2['n']}, range=[{info2['min']:.3f}, {info2['max']:.3f}]"
+        )
 
-    print(f"\nCovariates:")
+    print("\nCovariates:")
     for name3, info3 in ctx.covariate_data.items():
         is_idx = info3.get("is_index_array", False)
         label = f" [INDEX ARRAY, {info3['n_groups']} groups]" if is_idx else ""
-        print(f"  {name3}: n={info3['n']}, range=[{info3['min']:.3f}, {info3['max']:.3f}]{label}")
+        print(
+            f"  {name3}: n={info3['n']}, range=[{info3['min']:.3f}, {info3['max']:.3f}]{label}"
+        )
 
     print(f"\nValidation points: 1 initial + {len(ctx.extra_points)} extra")
     print(f"  Initial logp = {ctx.initial_point.logp:.6f}")
@@ -227,7 +235,9 @@ def _(ctx, mo):
     rows.append("| Point | PyMC logp | Gradient[0] | Gradient[1] | Gradient[2] |")
     rows.append("|-------|-----------|-------------|-------------|-------------|")
 
-    pts = [("initial", ctx.initial_point)] + [(f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)]
+    pts = [("initial", ctx.initial_point)] + [
+        (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
+    ]
     for name, vp in pts:
         g = vp.dlogp
         rows.append(
@@ -338,8 +348,10 @@ def _():
         sigma_y = _pm.HalfNormal("sigma_y", sigma=5)
         _pm.Normal("y_obs", mu=a[group_idx] + b * x_h, sigma=sigma_y, observed=y_h)
 
-    print(f"Hierarchical model: {len(hierarchical_model.free_RVs)} free params, "
-          f"{_N} observations, {n_groups} groups")
+    print(
+        f"Hierarchical model: {len(hierarchical_model.free_RVs)} free params, "
+        f"{_N} observations, {n_groups} groups"
+    )
     return (hierarchical_model,)
 
 

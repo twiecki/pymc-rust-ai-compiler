@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import inspect
 import textwrap
-from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import numpy as np
@@ -58,40 +57,55 @@ class PytorchModelExporter:
         # Extract parameter info
         param_infos = []
         for name, param in module.named_parameters():
-            param_infos.append(TensorInfo(
-                name=name,
-                shape=list(param.shape),
-                dtype=str(param.dtype).replace("torch.", ""),
-                size=int(param.numel()),
-            ))
+            param_infos.append(
+                TensorInfo(
+                    name=name,
+                    shape=list(param.shape),
+                    dtype=str(param.dtype).replace("torch.", ""),
+                    size=int(param.numel()),
+                )
+            )
 
         # Extract input info
         input_infos = []
         if isinstance(self.sample_input, dict):
             for name, val in self.sample_input.items():
                 t = torch.as_tensor(val)
-                input_infos.append(TensorInfo(
-                    name=name, shape=list(t.shape),
-                    dtype=str(t.dtype).replace("torch.", ""),
-                    size=int(t.numel()),
-                ))
+                input_infos.append(
+                    TensorInfo(
+                        name=name,
+                        shape=list(t.shape),
+                        dtype=str(t.dtype).replace("torch.", ""),
+                        size=int(t.numel()),
+                    )
+                )
         elif isinstance(self.sample_input, (tuple, list)):
             for i, val in enumerate(self.sample_input):
                 t = torch.as_tensor(val)
-                name = self.input_names[i] if self.input_names and i < len(self.input_names) else f"x_{i}"
-                input_infos.append(TensorInfo(
-                    name=name, shape=list(t.shape),
-                    dtype=str(t.dtype).replace("torch.", ""),
-                    size=int(t.numel()),
-                ))
+                name = (
+                    self.input_names[i]
+                    if self.input_names and i < len(self.input_names)
+                    else f"x_{i}"
+                )
+                input_infos.append(
+                    TensorInfo(
+                        name=name,
+                        shape=list(t.shape),
+                        dtype=str(t.dtype).replace("torch.", ""),
+                        size=int(t.numel()),
+                    )
+                )
         else:
             t = torch.as_tensor(self.sample_input)
             name = self.input_names[0] if self.input_names else "x"
-            input_infos.append(TensorInfo(
-                name=name, shape=list(t.shape),
-                dtype=str(t.dtype).replace("torch.", ""),
-                size=int(t.numel()),
-            ))
+            input_infos.append(
+                TensorInfo(
+                    name=name,
+                    shape=list(t.shape),
+                    dtype=str(t.dtype).replace("torch.", ""),
+                    size=int(t.numel()),
+                )
+            )
 
         # Forward pass to get output info
         module.eval()
@@ -99,11 +113,14 @@ class PytorchModelExporter:
             output = self._forward(module, self.sample_input)
         out_np = output.detach().cpu().numpy()
 
-        output_infos = [TensorInfo(
-            name="output", shape=list(out_np.shape),
-            dtype=str(output.dtype).replace("torch.", ""),
-            size=int(np.prod(out_np.shape)) if out_np.shape else 1,
-        )]
+        output_infos = [
+            TensorInfo(
+                name="output",
+                shape=list(out_np.shape),
+                dtype=str(output.dtype).replace("torch.", ""),
+                size=int(np.prod(out_np.shape)) if out_np.shape else 1,
+            )
+        ]
 
         # Generate validation points
         rng = np.random.default_rng(self._seed)
@@ -143,15 +160,17 @@ class PytorchModelExporter:
 
     def _forward(self, module, inp):
         import torch
+
         if isinstance(inp, dict):
-            return module(**{k: torch.as_tensor(v, dtype=torch.float32) for k, v in inp.items()})
+            return module(
+                **{k: torch.as_tensor(v, dtype=torch.float32) for k, v in inp.items()}
+            )
         elif isinstance(inp, (tuple, list)):
             return module(*[torch.as_tensor(v, dtype=torch.float32) for v in inp])
         else:
             return module(torch.as_tensor(inp, dtype=torch.float32))
 
     def _compute_validation_point(self, module, inp) -> ValidationPoint:
-        import torch
 
         module.zero_grad()
         module.train()
@@ -183,10 +202,21 @@ class PytorchModelExporter:
 
     def _input_to_dict(self, inp) -> dict:
         import torch
+
         if isinstance(inp, dict):
-            return {k: np.asarray(v).tolist() if not isinstance(v, torch.Tensor) else v.detach().cpu().numpy().tolist() for k, v in inp.items()}
+            return {
+                k: np.asarray(v).tolist()
+                if not isinstance(v, torch.Tensor)
+                else v.detach().cpu().numpy().tolist()
+                for k, v in inp.items()
+            }
         elif isinstance(inp, (tuple, list)):
-            return {f"x_{i}": np.asarray(v).tolist() if not isinstance(v, torch.Tensor) else v.detach().cpu().numpy().tolist() for i, v in enumerate(inp)}
+            return {
+                f"x_{i}": np.asarray(v).tolist()
+                if not isinstance(v, torch.Tensor)
+                else v.detach().cpu().numpy().tolist()
+                for i, v in enumerate(inp)
+            }
         else:
             if isinstance(inp, torch.Tensor):
                 return {"x": inp.detach().cpu().numpy().tolist()}

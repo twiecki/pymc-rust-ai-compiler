@@ -7,11 +7,8 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pymc as pm
-import pytest
 
 from pymc_rust_compiler.exporter import (
-    ModelContext,
     ParamInfo,
     RustModelExporter,
     ValidationPoint,
@@ -27,31 +24,46 @@ from pymc_rust_compiler.exporter import (
 class TestParamInfo:
     def test_scalar_param(self):
         p = ParamInfo(
-            name="mu", value_var="mu", transform=None,
-            shape=[], unc_shape=[], size=1,
+            name="mu",
+            value_var="mu",
+            transform=None,
+            shape=[],
+            unc_shape=[],
+            size=1,
         )
         assert p.is_scalar is True
 
     def test_vector_param(self):
         p = ParamInfo(
-            name="offset", value_var="offset", transform=None,
-            shape=[4], unc_shape=[4], size=4,
+            name="offset",
+            value_var="offset",
+            transform=None,
+            shape=[4],
+            unc_shape=[4],
+            size=4,
         )
         assert p.is_scalar is False
 
     def test_log_transformed_param(self):
         p = ParamInfo(
-            name="sigma", value_var="sigma_log__", transform="LogTransform",
-            shape=[], unc_shape=[], size=1,
+            name="sigma",
+            value_var="sigma_log__",
+            transform="LogTransform",
+            shape=[],
+            unc_shape=[],
+            size=1,
         )
         assert p.transform == "LogTransform"
         assert p.is_scalar is True
 
     def test_zerosum_param(self):
         p = ParamInfo(
-            name="effect", value_var="effect_zerosum__",
+            name="effect",
+            value_var="effect_zerosum__",
             transform="ZeroSumTransform",
-            shape=[6], unc_shape=[5], size=5,
+            shape=[6],
+            unc_shape=[5],
+            size=5,
             zerosum_axes=[0],
         )
         assert p.zerosum_axes == [0]
@@ -187,8 +199,7 @@ class TestExporterNormalModel:
 
         # At least one extra point should differ
         assert any(
-            p1.point != p2.point
-            for p1, p2 in zip(ctx1.extra_points, ctx2.extra_points)
+            p1.point != p2.point for p1, p2 in zip(ctx1.extra_points, ctx2.extra_points)
         )
 
 
@@ -373,7 +384,7 @@ class TestExportModel:
 
     def test_export_with_output_dir(self, normal_model):
         with tempfile.TemporaryDirectory() as tmpdir:
-            exporter = export_model(normal_model, output_dir=tmpdir)
+            export_model(normal_model, output_dir=tmpdir)
             assert (Path(tmpdir) / "codegen_prompt.txt").exists()
 
     def test_export_with_source_code(self, normal_model):

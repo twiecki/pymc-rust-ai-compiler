@@ -36,7 +36,7 @@ from pymc_rust_compiler import compile_model
 np.random.seed(314)
 
 n_stores = 6
-n_days = 7       # Mon-Sun
+n_days = 7  # Mon-Sun
 n_categories = 4  # e.g., Electronics, Clothing, Food, Home
 
 store_names = [f"store_{i}" for i in range(n_stores)]
@@ -73,8 +73,12 @@ for s in range(n_stores):
     for d in range(n_days):
         for c in range(n_categories):
             n = np.random.poisson(n_obs_per_cell) + 1
-            mu = (true_grand_mean + true_store_effect[s]
-                  + true_day_effect[d] + true_interaction[s, d, c])
+            mu = (
+                true_grand_mean
+                + true_store_effect[s]
+                + true_day_effect[d]
+                + true_interaction[s, d, c]
+            )
             y_vals = np.random.normal(mu, true_sigma_y, n)
             for y in y_vals:
                 records.append((s, d, c, y))
@@ -128,10 +132,12 @@ with pm.Model() as model:
         n_zerosum_axes=2,
     )
 
-    mu = (grand_mean
-          + store_effect[store_idx]
-          + day_effect[day_idx]
-          + interaction[store_idx, day_idx, cat_idx])
+    mu = (
+        grand_mean
+        + store_effect[store_idx]
+        + day_effect[day_idx]
+        + interaction[store_idx, day_idx, cat_idx]
+    )
 
     sigma_y = pm.HalfNormal("sigma_y", sigma=5)
     pm.Normal("y", mu=mu, sigma=sigma_y, observed=y_obs)
@@ -139,7 +145,9 @@ with pm.Model() as model:
 n_free = sum(v.size for v in model.initial_point().values())
 print(f"Free RVs: {[rv.name for rv in model.free_RVs]}")
 print(f"Unconstrained parameters: {n_free}")
-print(f"Transforms: {[(rv.name, type(model.rvs_to_transforms.get(rv)).__name__) for rv in model.free_RVs]}")
+print(
+    f"Transforms: {[(rv.name, type(model.rvs_to_transforms.get(rv)).__name__) for rv in model.free_RVs]}"
+)
 print()
 
 result = compile_model(
@@ -167,13 +175,24 @@ if result.success:
     import arviz as az
 
     print("\n--- Posterior summary (hyperparameters) ---")
-    print(az.summary(idata, var_names=[
-        "grand_mean", "sigma_store", "sigma_day", "sigma_cat", "sigma_y",
-    ]))
+    print(
+        az.summary(
+            idata,
+            var_names=[
+                "grand_mean",
+                "sigma_store",
+                "sigma_day",
+                "sigma_cat",
+                "sigma_y",
+            ],
+        )
+    )
 
-    print(f"\nTrue values: grand_mean={true_grand_mean}, "
-          f"sigma_store={true_sigma_store}, sigma_day={true_sigma_day}, "
-          f"sigma_cat={true_sigma_cat}, sigma_y={true_sigma_y}")
+    print(
+        f"\nTrue values: grand_mean={true_grand_mean}, "
+        f"sigma_store={true_sigma_store}, sigma_day={true_sigma_day}, "
+        f"sigma_cat={true_sigma_cat}, sigma_y={true_sigma_y}"
+    )
 
     # Posterior plots
     axes = az.plot_posterior(

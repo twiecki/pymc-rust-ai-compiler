@@ -6,9 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import numpy as np
-import pymc as pm
-import pytest
 
 from pymc_rust_compiler.compiler import (
     CompilationResult,
@@ -20,10 +17,7 @@ from pymc_rust_compiler.compiler import (
     _tool_write_rust_code,
 )
 from pymc_rust_compiler.exporter import (
-    ModelContext,
-    ParamInfo,
     RustModelExporter,
-    ValidationPoint,
 )
 
 
@@ -57,8 +51,12 @@ class TestCompilationResult:
 
     def test_default_token_usage(self):
         r = CompilationResult(
-            rust_code="", logp_validated=False, validation_errors=[],
-            n_attempts=0, build_dir=None, timings={},
+            rust_code="",
+            logp_validated=False,
+            validation_errors=[],
+            n_attempts=0,
+            build_dir=None,
+            timings={},
         )
         assert r.token_usage["input_tokens"] == 0
         assert r.token_usage["output_tokens"] == 0
@@ -97,28 +95,32 @@ class TestGenerateDataRs:
         return ctx
 
     def test_basic_observed_data(self):
-        ctx = self._make_ctx({
-            "y": {
-                "shape": [3],
-                "dtype": "float64",
-                "n": 3,
-                "values": [1.0, 2.0, 3.0],
+        ctx = self._make_ctx(
+            {
+                "y": {
+                    "shape": [3],
+                    "dtype": "float64",
+                    "n": 3,
+                    "values": [1.0, 2.0, 3.0],
+                }
             }
-        })
+        )
         rs = _generate_data_rs(ctx)
 
         assert "Y_N: usize = 3" in rs
         assert "Y_DATA: &[f64]" in rs
 
     def test_multidimensional_data_flattened(self):
-        ctx = self._make_ctx({
-            "y": {
-                "shape": [2, 3],
-                "dtype": "float64",
-                "n": 6,
-                "values": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+        ctx = self._make_ctx(
+            {
+                "y": {
+                    "shape": [2, 3],
+                    "dtype": "float64",
+                    "n": 6,
+                    "values": [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                }
             }
-        })
+        )
         rs = _generate_data_rs(ctx)
 
         assert "Y_N: usize = 6" in rs
@@ -156,13 +158,15 @@ class TestGenerateDataRs:
         assert "Y_DATA" not in rs
 
     def test_full_precision(self):
-        ctx = self._make_ctx({
-            "y": {
-                "shape": [1],
-                "n": 1,
-                "values": [3.141592653589793],
+        ctx = self._make_ctx(
+            {
+                "y": {
+                    "shape": [1],
+                    "n": 1,
+                    "values": [3.141592653589793],
+                }
             }
-        })
+        )
         rs = _generate_data_rs(ctx)
 
         # Should contain full precision representation
@@ -263,7 +267,9 @@ class TestToolWriteRustCode:
             (build_path / "src").mkdir()
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             code = "pub fn hello() {}"
@@ -278,7 +284,9 @@ class TestToolWriteRustCode:
             (build_path / "src").mkdir()
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _tool_write_rust_code({"code": ""}, state, verbose=False)
@@ -298,7 +306,9 @@ class TestToolReadFile:
             (build_path / "src" / "data.rs").write_text("// data")
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _tool_read_file({"path": "src/data.rs"}, state, verbose=False)
@@ -309,7 +319,9 @@ class TestToolReadFile:
             build_path = Path(tmpdir)
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _tool_read_file({"path": "nonexistent.rs"}, state, verbose=False)
@@ -318,7 +330,9 @@ class TestToolReadFile:
     def test_read_empty_path(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state = _AgentState(
-                build_path=Path(tmpdir), ctx=None, messages=[],
+                build_path=Path(tmpdir),
+                ctx=None,
+                messages=[],
             )
             result = _tool_read_file({"path": ""}, state, verbose=False)
             assert "Error" in result
@@ -329,7 +343,9 @@ class TestToolReadFile:
             (build_path / "big.txt").write_text("x" * 10000)
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _tool_read_file({"path": "big.txt"}, state, verbose=False)
@@ -345,7 +361,9 @@ class TestToolReadFile:
 class TestExecuteTool:
     def test_unknown_tool(self):
         state = _AgentState(
-            build_path=Path("/tmp"), ctx=None, messages=[],
+            build_path=Path("/tmp"),
+            ctx=None,
+            messages=[],
         )
         result = _execute_tool("nonexistent_tool", {}, state, verbose=False)
         assert "Unknown tool" in result
@@ -356,7 +374,9 @@ class TestExecuteTool:
             (build_path / "src").mkdir()
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _execute_tool(
@@ -370,7 +390,9 @@ class TestExecuteTool:
             (build_path / "test.rs").write_text("// hello")
 
             state = _AgentState(
-                build_path=build_path, ctx=None, messages=[],
+                build_path=build_path,
+                ctx=None,
+                messages=[],
             )
 
             result = _execute_tool(
@@ -385,14 +407,22 @@ class TestExecuteTool:
 
 
 class TestToolDefinitions:
-    def test_tools_list_has_four_tools(self):
+    def test_tools_list_has_five_tools(self):
         from pymc_rust_compiler.compiler import TOOLS
-        assert len(TOOLS) == 4
+
+        assert len(TOOLS) == 5
         tool_names = {t["name"] for t in TOOLS}
-        assert tool_names == {"write_rust_code", "cargo_build", "validate_logp", "read_file"}
+        assert tool_names == {
+            "write_rust_code",
+            "cargo_build",
+            "validate_logp",
+            "read_file",
+            "add_cargo_dependency",
+        }
 
     def test_system_prompt_exists(self):
         from pymc_rust_compiler.compiler import SYSTEM_PROMPT
+
         assert len(SYSTEM_PROMPT) > 100
         assert "CpuLogpFunc" in SYSTEM_PROMPT
 

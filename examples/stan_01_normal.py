@@ -36,7 +36,7 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Success: {result.success}")
     print(f"Tool calls: {result.n_tool_calls}")
     print(f"Build attempts: {result.n_attempts}")

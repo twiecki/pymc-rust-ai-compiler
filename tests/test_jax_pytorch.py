@@ -9,10 +9,21 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+_has_jax = pytest.importorskip is not None  # helper below
+try:
+    import jax  # noqa: F401
+
+    _has_jax = True
+except ImportError:
+    _has_jax = False
+
+jax_required = pytest.mark.skipif(not _has_jax, reason="JAX not installed")
+
 
 # ── JAX Exporter Tests ──────────────────────────────────────────────────────
 
 
+@jax_required
 class TestJaxExporter:
     """Test JaxModelExporter extracts correct model context."""
 
@@ -67,7 +78,6 @@ class TestJaxExporter:
         assert "b" in vp0.grad_params
 
     def test_forward_output_matches(self, simple_model):
-        import jax.numpy as jnp
         from pymc_rust_compiler.jax_exporter import JaxModelExporter
 
         fn, params, x = simple_model
@@ -106,7 +116,9 @@ class TestPytorchExporter:
                 super().__init__()
                 self.fc = nn.Linear(2, 3)
                 with torch.no_grad():
-                    self.fc.weight.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
+                    self.fc.weight.copy_(
+                        torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+                    )
                     self.fc.bias.copy_(torch.tensor([0.1, 0.2, 0.3]))
 
             def forward(self, x):
@@ -166,14 +178,20 @@ class TestTranspilerTools:
     """Test the transpiler's tool execution logic without API calls."""
 
     def test_write_code_syntax_check(self):
-        from pymc_rust_compiler.jax_pytorch_transpiler import _tool_write_code, _AgentState
+        from pymc_rust_compiler.jax_pytorch_transpiler import (
+            _tool_write_code,
+            _AgentState,
+        )
         from pymc_rust_compiler.jax_exporter import ModelContext
 
         state = _AgentState(
             direction="jax_to_pytorch",
             source_context=ModelContext(
-                source_framework="jax", source_code=None,
-                params=[], inputs=[], outputs=[],
+                source_framework="jax",
+                source_code=None,
+                params=[],
+                inputs=[],
+                outputs=[],
                 validation_points=[],
             ),
             generated_code="",
@@ -189,14 +207,20 @@ class TestTranspilerTools:
         assert "Syntax error" in result
 
     def test_validate_no_code(self):
-        from pymc_rust_compiler.jax_pytorch_transpiler import _tool_validate, _AgentState
+        from pymc_rust_compiler.jax_pytorch_transpiler import (
+            _tool_validate,
+            _AgentState,
+        )
         from pymc_rust_compiler.jax_exporter import ModelContext
 
         state = _AgentState(
             direction="jax_to_pytorch",
             source_context=ModelContext(
-                source_framework="jax", source_code=None,
-                params=[], inputs=[], outputs=[],
+                source_framework="jax",
+                source_code=None,
+                params=[],
+                inputs=[],
+                outputs=[],
                 validation_points=[],
             ),
             generated_code="",
@@ -205,11 +229,16 @@ class TestTranspilerTools:
         result = _tool_validate(state, verbose=False)
         assert "no code" in result.lower()
 
+    @jax_required
     def test_validate_pytorch_correct_model(self):
         """Test that validation passes for a correctly transpiled model."""
         import jax.numpy as jnp
         from pymc_rust_compiler.jax_exporter import JaxModelExporter
-        from pymc_rust_compiler.jax_pytorch_transpiler import _tool_write_code, _tool_validate, _AgentState
+        from pymc_rust_compiler.jax_pytorch_transpiler import (
+            _tool_write_code,
+            _tool_validate,
+            _AgentState,
+        )
 
         # Create a simple JAX model
         params = {
@@ -231,7 +260,7 @@ class TestTranspilerTools:
         )
 
         # Write correct PyTorch code
-        pytorch_code = '''
+        pytorch_code = """
 import torch
 import torch.nn as nn
 import numpy as np
@@ -247,19 +276,24 @@ def make_model(params):
             return x @ self.w + self.b
 
     return Model(params)
-'''
+"""
         _tool_write_code({"code": pytorch_code}, state, verbose=False)
         result = _tool_validate(state, verbose=False)
 
         assert "PASSED" in result
         assert state.validated is True
 
+    @jax_required
     def test_validate_jax_correct_model(self):
         """Test that validation passes for a correctly transpiled JAX model."""
         import torch
         import torch.nn as nn
         from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
-        from pymc_rust_compiler.jax_pytorch_transpiler import _tool_write_code, _tool_validate, _AgentState
+        from pymc_rust_compiler.jax_pytorch_transpiler import (
+            _tool_write_code,
+            _tool_validate,
+            _AgentState,
+        )
 
         # Create a simple PyTorch model
         class Linear(nn.Module):
@@ -284,7 +318,7 @@ def make_model(params):
         )
 
         # Write correct JAX code
-        jax_code = '''
+        jax_code = """
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -294,7 +328,7 @@ def init_params(param_data):
 
 def forward(params, x):
     return x @ params["w"] + params["b"]
-'''
+"""
         _tool_write_code({"code": jax_code}, state, verbose=False)
         result = _tool_validate(state, verbose=False)
 

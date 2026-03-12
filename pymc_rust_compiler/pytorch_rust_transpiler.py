@@ -13,11 +13,9 @@ This is the path to zero-overhead inference deployment.
 from __future__ import annotations
 
 import functools
-import json
 import os
 import subprocess
 import tempfile
-import textwrap
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,7 +23,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from pymc_rust_compiler.jax_exporter import ModelContext, TensorInfo, ValidationPoint
+from pymc_rust_compiler.jax_exporter import ModelContext, ValidationPoint
 
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
@@ -393,9 +391,11 @@ TOOLS = [
 
 # ── Result type ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class RustTranspileResult:
     """Result of transpiling PyTorch to Rust."""
+
     generated_code: str
     validated: bool
     validation_errors: list[str]
@@ -404,9 +404,13 @@ class RustTranspileResult:
     n_tool_calls: int = 0
     conversation_turns: int = 0
     timings: dict[str, float] = field(default_factory=dict)
-    token_usage: dict[str, int] = field(default_factory=lambda: {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-    })
+    token_usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
 
     @property
     def success(self) -> bool:
@@ -426,9 +430,11 @@ class RustTranspileResult:
 
 # ── Agent state ──────────────────────────────────────────────────────────────
 
+
 @dataclass
 class _AgentState:
     """Mutable state for the agent loop."""
+
     build_path: Path
     source_context: ModelContext
     source_code: str | None
@@ -442,6 +448,7 @@ class _AgentState:
 
 # ── Skill loading ────────────────────────────────────────────────────────────
 
+
 @functools.lru_cache(maxsize=None)
 def _load_skill(name: str) -> str:
     path = _SKILLS_DIR / f"{name}.md"
@@ -451,6 +458,7 @@ def _load_skill(name: str) -> str:
 
 
 # ── Rust project setup ───────────────────────────────────────────────────────
+
 
 def _setup_rust_project(build_path: Path, ctx: ModelContext, backend: str = "pure"):
     """Create a Rust project with parameter data baked in."""
@@ -484,12 +492,14 @@ def _setup_rust_project(build_path: Path, ctx: ModelContext, backend: str = "pur
 
         # Write values in chunks of 8
         for i in range(0, len(values), 8):
-            chunk = values[i:i+8]
+            chunk = values[i : i + 8]
             vals = ", ".join(f"{v:.9e}" for v in chunk)
             data_lines.append(f"    {vals},")
 
         data_lines.append("];")
-        data_lines.append(f"pub const {safe_name}_SHAPE: &[usize] = &{param_info.shape};")
+        data_lines.append(
+            f"pub const {safe_name}_SHAPE: &[usize] = &{param_info.shape};"
+        )
         data_lines.append("")
 
     (src / "data.rs").write_text("\n".join(data_lines))
@@ -506,6 +516,7 @@ def _setup_rust_project(build_path: Path, ctx: ModelContext, backend: str = "pur
 
 # ── Prompt building ──────────────────────────────────────────────────────────
 
+
 def _build_user_prompt(ctx: ModelContext) -> str:
     parts = []
     parts.append("Translate this PyTorch model to pure Rust.\n")
@@ -521,17 +532,23 @@ def _build_user_prompt(ctx: ModelContext) -> str:
 
     # Data.rs mapping
     parts.append("## Parameter Constants in data.rs\n")
-    parts.append("Each parameter is available as a flat `&[f32]` constant plus a shape constant:\n")
+    parts.append(
+        "Each parameter is available as a flat `&[f32]` constant plus a shape constant:\n"
+    )
     for p in ctx.params:
         safe_name = p.name.replace(".", "_").upper()
-        parts.append(f"- `{safe_name}`: &[f32] (len={p.size}), `{safe_name}_SHAPE`: &[usize] = {p.shape}")
+        parts.append(
+            f"- `{safe_name}`: &[f32] (len={p.size}), `{safe_name}_SHAPE`: &[usize] = {p.shape}"
+        )
     parts.append("")
 
     # Input info
     parts.append("## Inputs\n")
     for i in ctx.inputs:
         parts.append(f"- `{i.name}`: shape={i.shape}, dtype={i.dtype}")
-    parts.append("The `forward()` function receives the input as a flat &[f32] array.\n")
+    parts.append(
+        "The `forward()` function receives the input as a flat &[f32] array.\n"
+    )
 
     # Output info
     parts.append("## Outputs\n")
@@ -582,8 +599,12 @@ def _build_user_prompt(ctx: ModelContext) -> str:
 
 # ── Tool execution ───────────────────────────────────────────────────────────
 
+
 def _execute_tool(
-    name: str, input_data: dict, state: _AgentState, verbose: bool,
+    name: str,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     if name == "write_code":
         return _tool_write_code(input_data, state, verbose)
@@ -602,7 +623,9 @@ def _execute_tool(
 
 
 def _tool_write_code(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     code = input_data.get("code", "")
     if not code:
@@ -614,7 +637,9 @@ def _tool_write_code(
     if verbose:
         print(f"  [write_code] Wrote {len(code)} chars to generated.rs")
 
-    return f"Written {len(code)} chars to src/generated.rs. Use `cargo_build` to compile."
+    return (
+        f"Written {len(code)} chars to src/generated.rs. Use `cargo_build` to compile."
+    )
 
 
 def _tool_cargo_build(state: _AgentState, verbose: bool) -> str:
@@ -724,11 +749,17 @@ def _tool_validate(state: _AgentState, verbose: bool) -> str:
             errors.append(
                 f"{label}: output shape mismatch: got {rust_output.shape}, expected {ref_output.shape}"
             )
-            report_lines.append(f"{label}: SHAPE MISMATCH {rust_output.shape} vs {ref_output.shape}")
+            report_lines.append(
+                f"{label}: SHAPE MISMATCH {rust_output.shape} vs {ref_output.shape}"
+            )
             continue
 
         max_diff = float(np.max(np.abs(rust_output - ref_output)))
-        rel_err = float(np.max(np.abs(rust_output - ref_output) / np.maximum(np.abs(ref_output), 1e-8)))
+        rel_err = float(
+            np.max(
+                np.abs(rust_output - ref_output) / np.maximum(np.abs(ref_output), 1e-8)
+            )
+        )
         out_ok = rel_err <= 1e-4
 
         report_lines.append(
@@ -736,7 +767,9 @@ def _tool_validate(state: _AgentState, verbose: bool) -> str:
             f"[{'OK' if out_ok else 'MISMATCH'}]"
         )
         if not out_ok:
-            errors.append(f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}")
+            errors.append(
+                f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}"
+            )
 
         # Test gradients for each parameter
         for pname, ref_grad in vp.grad_params.items():
@@ -779,7 +812,9 @@ def _tool_validate(state: _AgentState, verbose: bool) -> str:
                 continue
 
             grad_diff = float(np.max(np.abs(rust_grad - ref_g)))
-            grad_rel = float(np.max(np.abs(rust_grad - ref_g) / np.maximum(np.abs(ref_g), 1e-8)))
+            grad_rel = float(
+                np.max(np.abs(rust_grad - ref_g) / np.maximum(np.abs(ref_g), 1e-8))
+            )
             grad_ok = grad_rel <= 1e-3
 
             report_lines.append(
@@ -787,7 +822,9 @@ def _tool_validate(state: _AgentState, verbose: bool) -> str:
                 f"[{'OK' if grad_ok else 'MISMATCH'}]"
             )
             if not grad_ok:
-                errors.append(f"{label}: grad['{pname}'] mismatch: rel_err={grad_rel:.2e}")
+                errors.append(
+                    f"{label}: grad['{pname}'] mismatch: rel_err={grad_rel:.2e}"
+                )
 
     # Restore original data.rs if we modified it
     if len(ctx.validation_points) > 1:
@@ -828,26 +865,34 @@ def _update_data_rs(build_path: Path, ctx: ModelContext, vp: ValidationPoint):
         data_lines.append(f"pub const {safe_name}: &[f32] = &[")
 
         for i in range(0, len(values), 8):
-            chunk = values[i:i+8]
+            chunk = values[i : i + 8]
             vals = ", ".join(f"{v:.9e}" for v in chunk)
             data_lines.append(f"    {vals},")
 
         data_lines.append("];")
-        data_lines.append(f"pub const {safe_name}_SHAPE: &[usize] = &{param_info.shape};")
+        data_lines.append(
+            f"pub const {safe_name}_SHAPE: &[usize] = &{param_info.shape};"
+        )
         data_lines.append("")
 
     (build_path / "src" / "data.rs").write_text("\n".join(data_lines))
 
 
 def _tool_read_source(state: _AgentState, verbose: bool) -> str:
-    source = state.source_code or state.source_context.source_code or "(no source code available)"
+    source = (
+        state.source_code
+        or state.source_context.source_code
+        or "(no source code available)"
+    )
     if verbose:
         print(f"  [read_source] {len(source)} chars")
     return source
 
 
 def _tool_read_file(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     rel_path = input_data.get("path", "")
     if not rel_path:
@@ -871,7 +916,9 @@ def _tool_read_file(
 
 
 def _tool_add_cargo_dependency(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     """Add a crate dependency to Cargo.toml."""
     name = input_data.get("name", "")
@@ -927,6 +974,7 @@ def _tool_add_cargo_dependency(
 
 
 # ── Agent loop ───────────────────────────────────────────────────────────────
+
 
 def _run_agent_loop(
     state: _AgentState,
@@ -988,11 +1036,13 @@ def _run_agent_loop(
             elif block.type == "tool_use":
                 state.tool_calls += 1
                 result = _execute_tool(block.name, block.input, state, verbose)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    }
+                )
 
                 if state.validated:
                     break
@@ -1010,6 +1060,7 @@ def _run_agent_loop(
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
+
 
 def transpile_pytorch_to_rust(
     module: Any,  # torch.nn.Module
@@ -1057,15 +1108,19 @@ def transpile_pytorch_to_rust(
         print(f"Extracting PyTorch model context (backend={backend})...")
     t0 = time.time()
     exporter = PytorchModelExporter(
-        module, sample_input,
-        source_code=source_code, loss_fn=loss_fn,
+        module,
+        sample_input,
+        source_code=source_code,
+        loss_fn=loss_fn,
     )
     ctx = exporter.context
     timings["extract"] = time.time() - t0
 
     if verbose:
         n_params = sum(p.size for p in ctx.params)
-        print(f"  {n_params} parameters, {len(ctx.validation_points)} validation points")
+        print(
+            f"  {n_params} parameters, {len(ctx.validation_points)} validation points"
+        )
 
     # Step 2: Set up Rust build directory
     if build_dir:
@@ -1087,7 +1142,7 @@ def transpile_pytorch_to_rust(
         system_prompt = SYSTEM_PROMPT
         skill = _load_skill("pytorch_to_rust")
     if skill:
-        system_prompt += f"\n\n{'='*60}\n{skill}"
+        system_prompt += f"\n\n{'=' * 60}\n{skill}"
 
     # Step 4: Build user prompt and run agent
     user_prompt = _build_user_prompt(ctx)
@@ -1104,7 +1159,12 @@ def transpile_pytorch_to_rust(
         print("\nStarting agent loop...")
 
     turns, token_usage = _run_agent_loop(
-        state, system_prompt, api_key, max_turns, model_name, verbose,
+        state,
+        system_prompt,
+        api_key,
+        max_turns,
+        model_name,
+        verbose,
     )
 
     # Read final generated code

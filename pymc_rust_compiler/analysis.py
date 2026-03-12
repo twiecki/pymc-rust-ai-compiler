@@ -44,14 +44,16 @@ def _load_from_tsv(path: str | Path) -> list[_BenchmarkRecord]:
         for row in reader:
             if row["event_type"] != "benchmark" or not row["us_per_eval"]:
                 continue
-            records.append(_BenchmarkRecord(
-                turn=int(row["turn"]),
-                timestamp_s=float(row["timestamp_s"]),
-                us_per_eval=float(row["us_per_eval"]),
-                status=row["status"],
-                description=row["description"],
-                code_hash=row["code_hash"],
-            ))
+            records.append(
+                _BenchmarkRecord(
+                    turn=int(row["turn"]),
+                    timestamp_s=float(row["timestamp_s"]),
+                    us_per_eval=float(row["us_per_eval"]),
+                    status=row["status"],
+                    description=row["description"],
+                    code_hash=row["code_hash"],
+                )
+            )
     return records
 
 
@@ -61,14 +63,16 @@ def _load_from_result(result: CompilationResult) -> list[_BenchmarkRecord]:
     for ev in result.optimization_log:
         if ev.event_type != "benchmark" or ev.us_per_eval is None:
             continue
-        records.append(_BenchmarkRecord(
-            turn=ev.turn,
-            timestamp_s=ev.timestamp,
-            us_per_eval=ev.us_per_eval,
-            status=ev.status,
-            description=ev.description,
-            code_hash=ev.code_hash,
-        ))
+        records.append(
+            _BenchmarkRecord(
+                turn=ev.turn,
+                timestamp_s=ev.timestamp,
+                us_per_eval=ev.us_per_eval,
+                status=ev.status,
+                description=ev.description,
+                code_hash=ev.code_hash,
+            )
+        )
     return records
 
 
@@ -126,17 +130,27 @@ def plot_optimization_progress(
     # Plot discarded as faint gray
     if discard_idx:
         ax.scatter(
-            discard_idx, discard_us,
-            c="#cccccc", s=40, zorder=2, label="Discarded",
-            edgecolors="#aaaaaa", linewidths=0.5,
+            discard_idx,
+            discard_us,
+            c="#cccccc",
+            s=40,
+            zorder=2,
+            label="Discarded",
+            edgecolors="#aaaaaa",
+            linewidths=0.5,
         )
 
     # Plot kept as green
     if keep_idx:
         ax.scatter(
-            keep_idx, keep_us,
-            c="#2ecc71", s=80, zorder=3, label="Kept",
-            edgecolors="#27ae60", linewidths=1,
+            keep_idx,
+            keep_us,
+            c="#2ecc71",
+            s=80,
+            zorder=3,
+            label="Kept",
+            edgecolors="#27ae60",
+            linewidths=1,
         )
 
     # Running minimum (frontier) as step line
@@ -147,8 +161,12 @@ def plot_optimization_progress(
         running_min.append(current_min)
 
     ax.step(
-        range(len(records)), running_min,
-        where="post", color="#2c3e50", linewidth=2, zorder=4,
+        range(len(records)),
+        running_min,
+        where="post",
+        color="#2c3e50",
+        linewidth=2,
+        zorder=4,
         label="Best so far",
     )
 
@@ -182,10 +200,12 @@ def plot_optimization_progress(
             f"Baseline: {baseline:.2f} us/eval\n"
             f"Best: {best:.2f} us/eval\n"
             f"Improvement: {improvement_pct:.1f}%\n"
-            f"Kept: {n_keep}/{n_total} ({100*n_keep/n_total:.0f}%)"
+            f"Kept: {n_keep}/{n_total} ({100 * n_keep / n_total:.0f}%)"
         )
         ax.text(
-            0.02, 0.02, stats_text,
+            0.02,
+            0.02,
+            stats_text,
             transform=ax.transAxes,
             fontsize=9,
             verticalalignment="bottom",
@@ -233,16 +253,21 @@ def plot_waterfall(
 
     colors = ["#2ecc71" if d > 0 else "#e74c3c" for d in deltas]
 
-    bars = ax.bar(range(len(deltas)), deltas, color=colors, edgecolor="#2c3e50", linewidth=0.5)
+    bars = ax.bar(
+        range(len(deltas)), deltas, color=colors, edgecolor="#2c3e50", linewidth=0.5
+    )
 
     # Value labels on bars
     for bar, delta in zip(bars, deltas):
         y = bar.get_height()
         ax.text(
-            bar.get_x() + bar.get_width() / 2, y,
+            bar.get_x() + bar.get_width() / 2,
+            y,
             f"{delta:+.2f}",
-            ha="center", va="bottom" if y >= 0 else "top",
-            fontsize=8, fontweight="bold",
+            ha="center",
+            va="bottom" if y >= 0 else "top",
+            fontsize=8,
+            fontweight="bold",
         )
 
     ax.set_xticks(range(len(labels)))
@@ -254,11 +279,13 @@ def plot_waterfall(
 
     total = sum(deltas)
     ax.text(
-        0.98, 0.98,
+        0.98,
+        0.98,
         f"Total improvement: {total:.2f} us/eval",
         transform=ax.transAxes,
         fontsize=10,
-        ha="right", va="top",
+        ha="right",
+        va="top",
         fontfamily="monospace",
         bbox=dict(boxstyle="round,pad=0.4", facecolor="wheat", alpha=0.8),
     )
@@ -300,7 +327,9 @@ def plot_timeline(
                 "timestamp_s": str(ev.timestamp),
                 "event_type": ev.event_type,
                 "status": ev.status,
-                "us_per_eval": str(ev.us_per_eval) if ev.us_per_eval is not None else "",
+                "us_per_eval": str(ev.us_per_eval)
+                if ev.us_per_eval is not None
+                else "",
             }
             for ev in source.optimization_log
         ]
@@ -373,19 +402,19 @@ def print_summary(source: str | Path | CompilationResult) -> str:
     improvement_pct = (1 - best / baseline) * 100 if baseline > 0 else 0
 
     lines = [
-        f"Optimization Summary",
+        "Optimization Summary",
         f"{'=' * 40}",
         f"Total experiments: {len(records)}",
         f"  Kept:     {len(kept)}",
         f"  Discarded: {len(discarded)}",
         f"  Keep rate: {100 * len(kept) / len(records):.0f}%",
-        f"",
+        "",
         f"Baseline:    {baseline:.3f} us/eval",
         f"Best:        {best:.3f} us/eval",
         f"Improvement: {improvement_pct:.1f}%",
         f"Speedup:     {baseline / best:.2f}x" if best > 0 else "",
-        f"",
-        f"Kept experiments (chronological):",
+        "",
+        "Kept experiments (chronological):",
     ]
 
     prev_us = baseline

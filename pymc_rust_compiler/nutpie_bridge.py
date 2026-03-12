@@ -50,7 +50,7 @@ def _build_shared_lib(build_dir: Path) -> Path:
     if not so_path.exists():
         raise RuntimeError(
             f"Shared library not found at {so_path}. "
-            "Ensure Cargo.toml has [lib] crate-type = [\"cdylib\"]"
+            'Ensure Cargo.toml has [lib] crate-type = ["cdylib"]'
         )
     return so_path
 
@@ -62,10 +62,10 @@ def _load_logp_fn(so_path: Path, n_dim: int):
     # C FFI signature: int logp_ffi(const double* x, double* grad, double* logp_out, int dim)
     lib.logp_ffi.restype = ctypes.c_int
     lib.logp_ffi.argtypes = [
-        ctypes.c_void_p,   # x (input)
-        ctypes.c_void_p,   # grad (output)
-        ctypes.c_void_p,   # logp_out (output)
-        ctypes.c_int,      # dim
+        ctypes.c_void_p,  # x (input)
+        ctypes.c_void_p,  # grad (output)
+        ctypes.c_void_p,  # logp_out (output)
+        ctypes.c_int,  # dim
     ]
 
     # Pre-allocate output buffers
@@ -91,7 +91,7 @@ def _load_logp_fn(so_path: Path, n_dim: int):
 def to_nutpie(
     compile_result: CompilationResult,
     model: pm.Model,
-) -> "nutpie.compiled_pyfunc.PyFuncModel":
+) -> "nutpie.compiled_pyfunc.PyFuncModel":  # noqa: F821
     """Convert a CompilationResult into a nutpie-compatible model for sampling.
 
     Args:
@@ -123,6 +123,7 @@ def to_nutpie(
     model_fn = model.logp_dlogp_function(ravel_inputs=True)
     ip = model.initial_point()
     from pymc.blocking import DictToArrayBijection
+
     x0 = DictToArrayBijection.map(
         {v.name: ip[v.name] for v in model_fn._grad_vars}
     ).data
@@ -156,9 +157,10 @@ def to_nutpie(
             offset = 0
             for name, shape in zip(var_names, var_shapes):
                 size = int(np.prod(shape)) if shape else 1
-                result[name] = x[offset:offset + size].reshape(shape)
+                result[name] = x[offset : offset + size].reshape(shape)
                 offset += size
             return result
+
         return expand_fn
 
     def make_initial_point(seed):

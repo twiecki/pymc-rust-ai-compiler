@@ -4,10 +4,8 @@ This demonstrates the PyTorch → Rust transpiler on a simple 2-layer MLP.
 The generated Rust code has zero dependencies — just raw f32 math.
 """
 
-import os
 import torch
 import torch.nn as nn
-import numpy as np
 
 from pymc_rust_compiler import transpile_pytorch_to_rust
 
@@ -38,7 +36,7 @@ def main():
     print(f"PyTorch output: {pytorch_output}")
 
     # Source code for context
-    source = '''
+    source = """
 class MLP(nn.Module):
     def __init__(self, in_dim=4, hidden=8, out_dim=2):
         super().__init__()
@@ -48,7 +46,7 @@ class MLP(nn.Module):
     def forward(self, x):
         x = torch.relu(self.fc1(x))
         return self.fc2(x)
-'''
+"""
 
     # Transpile to Rust
     result = transpile_pytorch_to_rust(
@@ -59,7 +57,7 @@ class MLP(nn.Module):
     )
 
     if result.success:
-        print(f"\nTranspilation successful!")
+        print("\nTranspilation successful!")
         print(f"  Build dir: {result.build_dir}")
         print(f"  Tool calls: {result.n_tool_calls}")
         print(f"  Builds: {result.n_attempts}")
@@ -69,7 +67,7 @@ class MLP(nn.Module):
         if len(result.generated_code) > 500:
             print("...")
     else:
-        print(f"\nTranspilation failed:")
+        print("\nTranspilation failed:")
         for err in result.validation_errors:
             print(f"  - {err}")
 

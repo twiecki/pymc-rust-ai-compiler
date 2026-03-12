@@ -3,8 +3,6 @@
 Classic Eight Schools example — non-centered parameterization.
 """
 
-import numpy as np
-
 from pymc_rust_compiler import compile_stan_model
 
 STAN_CODE = """
@@ -45,7 +43,7 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Success: {result.success}")
     print(f"Tool calls: {result.n_tool_calls}")
     print(f"Build attempts: {result.n_attempts}")

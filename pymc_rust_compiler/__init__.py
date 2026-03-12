@@ -29,8 +29,16 @@ from pymc_rust_compiler.pytorch_rust_transpiler import (
 
 # PyMC/Stan imports are lazy — they pull in heavy deps (pymc, bridgestan)
 if TYPE_CHECKING:
-    from pymc_rust_compiler.exporter import ModelContext, RustModelExporter, export_model
-    from pymc_rust_compiler.compiler import compile_model, optimize_model, OptimizationEvent
+    from pymc_rust_compiler.exporter import (
+        ModelContext,
+        RustModelExporter,
+        export_model,
+    )
+    from pymc_rust_compiler.compiler import (
+        compile_model,
+        optimize_model,
+        OptimizationEvent,
+    )
     from pymc_rust_compiler.analysis import (
         plot_optimization_progress,
         plot_waterfall,
@@ -42,7 +50,10 @@ if TYPE_CHECKING:
         StanModelExporter,
         export_stan_model,
     )
-    from pymc_rust_compiler.stan_compiler import compile_stan_model, StanCompilationResult
+    from pymc_rust_compiler.stan_compiler import (
+        compile_stan_model,
+        StanCompilationResult,
+    )
     from pymc_rust_compiler.stan_to_pymc import transpile_stan_to_pymc, StanToPyMCResult
 
 
@@ -55,16 +66,28 @@ def __getattr__(name: str):
         "compile_model": ("pymc_rust_compiler.compiler", "compile_model"),
         "optimize_model": ("pymc_rust_compiler.compiler", "optimize_model"),
         "OptimizationEvent": ("pymc_rust_compiler.compiler", "OptimizationEvent"),
-        "plot_optimization_progress": ("pymc_rust_compiler.analysis", "plot_optimization_progress"),
+        "plot_optimization_progress": (
+            "pymc_rust_compiler.analysis",
+            "plot_optimization_progress",
+        ),
         "plot_waterfall": ("pymc_rust_compiler.analysis", "plot_waterfall"),
         "plot_timeline": ("pymc_rust_compiler.analysis", "plot_timeline"),
         "print_summary": ("pymc_rust_compiler.analysis", "print_summary"),
         "StanModelContext": ("pymc_rust_compiler.stan_exporter", "StanModelContext"),
         "StanModelExporter": ("pymc_rust_compiler.stan_exporter", "StanModelExporter"),
         "export_stan_model": ("pymc_rust_compiler.stan_exporter", "export_stan_model"),
-        "compile_stan_model": ("pymc_rust_compiler.stan_compiler", "compile_stan_model"),
-        "StanCompilationResult": ("pymc_rust_compiler.stan_compiler", "StanCompilationResult"),
-        "transpile_stan_to_pymc": ("pymc_rust_compiler.stan_to_pymc", "transpile_stan_to_pymc"),
+        "compile_stan_model": (
+            "pymc_rust_compiler.stan_compiler",
+            "compile_stan_model",
+        ),
+        "StanCompilationResult": (
+            "pymc_rust_compiler.stan_compiler",
+            "StanCompilationResult",
+        ),
+        "transpile_stan_to_pymc": (
+            "pymc_rust_compiler.stan_to_pymc",
+            "transpile_stan_to_pymc",
+        ),
         "StanToPyMCResult": ("pymc_rust_compiler.stan_to_pymc", "StanToPyMCResult"),
     }
     if name in _lazy_imports:
@@ -114,4 +137,5 @@ __all__ = [
 def to_nutpie(compile_result, model):
     """Convert a CompilationResult to a nutpie-compatible model. Lazy import."""
     from pymc_rust_compiler.nutpie_bridge import to_nutpie as _to_nutpie
+
     return _to_nutpie(compile_result, model)

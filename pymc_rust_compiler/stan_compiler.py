@@ -7,7 +7,6 @@ a PyMC model. Uses BridgeStan for reference logp+gradient values.
 from __future__ import annotations
 
 import functools
-import json
 import os
 import subprocess
 import tempfile
@@ -253,9 +252,13 @@ class StanCompilationResult:
     timings: dict[str, float]
     n_tool_calls: int = 0
     conversation_turns: int = 0
-    token_usage: dict[str, int] = field(default_factory=lambda: {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-    })
+    token_usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
     us_per_eval: float | None = None
 
     @property
@@ -283,8 +286,12 @@ def _detect_stan_skills(stan_code: str) -> list[str]:
 
     # GP detection
     gp_indicators = [
-        "gp_exp_quad_cov", "gp_matern", "gp_periodic",
-        "cov_exp_quad", "multi_normal", "multi_normal_cholesky",
+        "gp_exp_quad_cov",
+        "gp_matern",
+        "gp_periodic",
+        "cov_exp_quad",
+        "multi_normal",
+        "multi_normal_cholesky",
         "cholesky_decompose",
     ]
     if any(kw in stan_code.lower() for kw in gp_indicators):
@@ -308,7 +315,7 @@ def _build_system_prompt(skills: list[str]) -> str:
     for skill_name in skills:
         content = _load_skill(skill_name)
         if content:
-            prompt += f"\n\n{'='*60}\n{content}"
+            prompt += f"\n\n{'=' * 60}\n{content}"
     return prompt
 
 
@@ -388,15 +395,17 @@ def compile_stan_model(
     state = _AgentState(
         build_path=build_path,
         ctx=ctx,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Generate a Rust logp+gradient implementation for this Stan model.\n\n"
-                "Use your tools to write the code, build it, and validate it. "
-                "Iterate until validation passes.\n\n"
-                f"{prompt}"
-            ),
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Generate a Rust logp+gradient implementation for this Stan model.\n\n"
+                    "Use your tools to write the code, build it, and validate it. "
+                    "Iterate until validation passes.\n\n"
+                    f"{prompt}"
+                ),
+            }
+        ],
         timings=timings,
     )
 
@@ -422,7 +431,9 @@ def compile_stan_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
+                print(
+                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
+                )
 
         if response.stop_reason == "end_turn":
             if verbose:
@@ -446,11 +457,13 @@ def compile_stan_model(
             elif block.type == "tool_use":
                 state.tool_calls += 1
                 result = _execute_tool(block.name, block.input, state, verbose)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    }
+                )
 
                 if state.validated:
                     break
@@ -488,7 +501,10 @@ def compile_stan_model(
 
 
 def _execute_tool(
-    name: str, input_data: dict, state: _AgentState, verbose: bool,
+    name: str,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     """Execute a tool and return the result string."""
     if name == "write_rust_code":
@@ -506,7 +522,9 @@ def _execute_tool(
 
 
 def _tool_write_rust_code(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     code = input_data.get("code", "")
     if not code:
@@ -576,10 +594,12 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     if result.returncode != 0:
         return f"Error: validator crashed: {result.stderr[:500]}"
 
-    output_lines = [l for l in result.stdout.strip().split("\n") if l]
+    output_lines = [line for line in result.stdout.strip().split("\n") if line]
 
     if len(output_lines) != len(all_points):
-        return f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
+        return (
+            f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
+        )
 
     parsed = []
     for output_line in output_lines:
@@ -645,7 +665,9 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
 
 
 def _tool_read_file(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     rel_path = input_data.get("path", "")
     if not rel_path:
@@ -674,7 +696,9 @@ def _tool_read_file(
 
 
 def _tool_add_cargo_dependency(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     """Add a crate dependency to Cargo.toml."""
     name = input_data.get("name", "")
@@ -751,9 +775,7 @@ def _generate_data_rs(data: dict | None) -> str:
             n = len(flat)
             lines.append(f"pub const {name.upper()}_N: usize = {n};")
             formatted = ", ".join(f"{v:.17e}" for v in flat)
-            lines.append(
-                f"pub const {name.upper()}_DATA: &[f64] = &[{formatted}];\n"
-            )
+            lines.append(f"pub const {name.upper()}_DATA: &[f64] = &[{formatted}];\n")
 
             # Also export shape info for multi-dimensional arrays
             if arr.ndim > 1:
@@ -785,7 +807,7 @@ def _setup_rust_project(
     ]
     for dep_name, dep_version in (extra_cargo_deps or {}).items():
         if dep_version.startswith("{"):
-            deps_lines.append(f'{dep_name} = {dep_version}')
+            deps_lines.append(f"{dep_name} = {dep_version}")
         else:
             deps_lines.append(f'{dep_name} = "{dep_version}"')
 

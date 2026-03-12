@@ -37,14 +37,14 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Success: {result.success}")
     print(f"Tool calls: {result.n_tool_calls}")
     print(f"Validation attempts: {result.n_attempts}")
     print(f"Tokens: {result.token_usage}")
 
     if result.success:
-        print(f"\n--- Generated PyMC Code ---")
+        print("\n--- Generated PyMC Code ---")
         print(result.pymc_code)
 
         # Test that the model actually works
@@ -54,5 +54,5 @@ if __name__ == "__main__":
     else:
         print(f"\nValidation errors: {result.validation_errors}")
         if result.pymc_code:
-            print(f"\n--- Last Generated Code ---")
+            print("\n--- Last Generated Code ---")
             print(result.pymc_code)

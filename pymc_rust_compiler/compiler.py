@@ -16,9 +16,7 @@ from __future__ import annotations
 import csv
 import functools
 import hashlib
-import json
 import os
-import re
 import subprocess
 import tempfile
 import time
@@ -335,7 +333,9 @@ def _cuda_available() -> bool:
     """Check if CUDA is available at runtime."""
     try:
         result = subprocess.run(
-            ["nvidia-smi"], capture_output=True, timeout=5,
+            ["nvidia-smi"],
+            capture_output=True,
+            timeout=5,
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -346,11 +346,15 @@ def _cuda_available() -> bool:
 def _accelerate_available() -> bool:
     """Check if Apple Silicon with Accelerate framework is available."""
     import platform
+
     return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
 def _detect_skills(
-    model: pm.Model, ctx, use_cuda: bool | None = None, use_accelerate: bool | None = None,
+    model: pm.Model,
+    ctx,
+    use_cuda: bool | None = None,
+    use_accelerate: bool | None = None,
     use_enzyme: bool | None = None,
 ) -> list[str]:
     """Detect which skills are needed based on model structure.
@@ -372,14 +376,15 @@ def _detect_skills(
             break
     # Also check the logp graph text for GP indicators
     if not has_gp and any(
-        kw in ctx.logp_graph.lower()
-        for kw in ["cholesky", "mvnormal", "gp_"]
+        kw in ctx.logp_graph.lower() for kw in ["cholesky", "mvnormal", "gp_"]
     ):
         has_gp = True
 
     if has_gp:
         cuda = use_cuda if use_cuda is not None else _cuda_available()
-        accelerate = use_accelerate if use_accelerate is not None else _accelerate_available()
+        accelerate = (
+            use_accelerate if use_accelerate is not None else _accelerate_available()
+        )
         if cuda:
             skills.append("gp_cuda")
         elif accelerate:
@@ -417,7 +422,7 @@ def _build_system_prompt(skills: list[str]) -> str:
     for skill_name in skills:
         content = _load_skill(skill_name)
         if content:
-            prompt += f"\n\n{'='*60}\n{content}"
+            prompt += f"\n\n{'=' * 60}\n{content}"
     return prompt
 
 
@@ -465,9 +470,13 @@ class CompilationResult:
     timings: dict[str, float]
     n_tool_calls: int = 0
     conversation_turns: int = 0
-    token_usage: dict[str, int] = field(default_factory=lambda: {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-    })
+    token_usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
     us_per_eval: float | None = None  # benchmark result if available
     optimization_log: list[OptimizationEvent] = field(default_factory=list)
 
@@ -493,20 +502,29 @@ class CompilationResult:
 
         with open(path, "w", newline="") as f:
             writer = csv.writer(f, delimiter="\t")
-            writer.writerow([
-                "turn", "timestamp_s", "event_type", "status",
-                "us_per_eval", "code_hash", "description",
-            ])
+            writer.writerow(
+                [
+                    "turn",
+                    "timestamp_s",
+                    "event_type",
+                    "status",
+                    "us_per_eval",
+                    "code_hash",
+                    "description",
+                ]
+            )
             for ev in self.optimization_log:
-                writer.writerow([
-                    ev.turn,
-                    f"{ev.timestamp:.2f}",
-                    ev.event_type,
-                    ev.status,
-                    f"{ev.us_per_eval:.3f}" if ev.us_per_eval is not None else "",
-                    ev.code_hash,
-                    ev.description,
-                ])
+                writer.writerow(
+                    [
+                        ev.turn,
+                        f"{ev.timestamp:.2f}",
+                        ev.event_type,
+                        ev.status,
+                        f"{ev.us_per_eval:.3f}" if ev.us_per_eval is not None else "",
+                        ev.code_hash,
+                        ev.description,
+                    ]
+                )
 
         return path
 
@@ -588,7 +606,13 @@ def compile_model(
         print(f"  {ctx.n_params} parameters, {len(prompt)} char prompt")
 
     # Detect model-specific skills and build augmented system prompt
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate, use_enzyme=use_enzyme)
+    skills = _detect_skills(
+        model,
+        ctx,
+        use_cuda=use_cuda,
+        use_accelerate=use_accelerate,
+        use_enzyme=use_enzyme,
+    )
     system_prompt = _build_system_prompt(skills)
     if verbose and skills:
         print(f"  Skills loaded: {', '.join(skills)}")
@@ -617,15 +641,17 @@ def compile_model(
     state = _AgentState(
         build_path=build_path,
         ctx=ctx,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Generate a Rust logp+gradient implementation for this PyMC model.\n\n"
-                "Use your tools to write the code, build it, and validate it. "
-                "Iterate until validation passes.\n\n"
-                f"{prompt}"
-            ),
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Generate a Rust logp+gradient implementation for this PyMC model.\n\n"
+                    "Use your tools to write the code, build it, and validate it. "
+                    "Iterate until validation passes.\n\n"
+                    f"{prompt}"
+                ),
+            }
+        ],
         timings=timings,
     )
 
@@ -653,7 +679,9 @@ def compile_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
+                print(
+                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
+                )
 
         # Check stop reason
         if response.stop_reason == "end_turn":
@@ -679,11 +707,13 @@ def compile_model(
             elif block.type == "tool_use":
                 state.tool_calls += 1
                 result = _execute_tool(block.name, block.input, state, verbose)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    }
+                )
 
                 # Check if validation passed
                 if state.validated:
@@ -748,9 +778,7 @@ def _execute_tool(
         return f"Unknown tool: {name}"
 
 
-def _tool_write_rust_code(
-    input_data: dict, state: _AgentState, verbose: bool
-) -> str:
+def _tool_write_rust_code(input_data: dict, state: _AgentState, verbose: bool) -> str:
     """Write the generated.rs file."""
     code = input_data.get("code", "")
     if not code:
@@ -777,14 +805,16 @@ def _tool_write_rust_code(
     if verbose:
         print(f"  [write_rust_code] Wrote {len(code)} chars to generated.rs")
 
-    state.optimization_log.append(OptimizationEvent(
-        turn=state.tool_calls,
-        timestamp=time.time() - state.t0_loop,
-        event_type="write_code",
-        status="OK",
-        description=f"Wrote {len(code)} chars",
-        code_hash=_code_hash(state.build_path),
-    ))
+    state.optimization_log.append(
+        OptimizationEvent(
+            turn=state.tool_calls,
+            timestamp=time.time() - state.t0_loop,
+            event_type="write_code",
+            status="OK",
+            description=f"Wrote {len(code)} chars",
+            code_hash=_code_hash(state.build_path),
+        )
+    )
 
     return f"Written {len(code)} chars to src/generated.rs"
 
@@ -814,26 +844,30 @@ def _tool_cargo_build(state: _AgentState, verbose: bool) -> str:
     if result.returncode == 0:
         if verbose:
             print(f"  [cargo_build] OK ({elapsed:.1f}s)")
-        state.optimization_log.append(OptimizationEvent(
-            turn=state.tool_calls,
-            timestamp=time.time() - state.t0_loop,
-            event_type="build",
-            status="PASS",
-            description=f"Build OK ({elapsed:.1f}s)",
-            code_hash=_code_hash(state.build_path),
-        ))
+        state.optimization_log.append(
+            OptimizationEvent(
+                turn=state.tool_calls,
+                timestamp=time.time() - state.t0_loop,
+                event_type="build",
+                status="PASS",
+                description=f"Build OK ({elapsed:.1f}s)",
+                code_hash=_code_hash(state.build_path),
+            )
+        )
         return f"Build successful ({elapsed:.1f}s)"
     else:
         if verbose:
             print(f"  [cargo_build] FAILED ({elapsed:.1f}s)")
-        state.optimization_log.append(OptimizationEvent(
-            turn=state.tool_calls,
-            timestamp=time.time() - state.t0_loop,
-            event_type="build",
-            status="CRASH",
-            description=f"Build FAILED ({elapsed:.1f}s)",
-            code_hash=_code_hash(state.build_path),
-        ))
+        state.optimization_log.append(
+            OptimizationEvent(
+                turn=state.tool_calls,
+                timestamp=time.time() - state.t0_loop,
+                event_type="build",
+                status="CRASH",
+                description=f"Build FAILED ({elapsed:.1f}s)",
+                code_hash=_code_hash(state.build_path),
+            )
+        )
         # Return compiler errors (truncated to avoid token explosion)
         errors = result.stderr
         if len(errors) > 4000:
@@ -878,10 +912,12 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     if result.returncode != 0:
         return f"Error: validator crashed: {result.stderr[:500]}"
 
-    output_lines = [l for l in result.stdout.strip().split("\n") if l]
+    output_lines = [line for line in result.stdout.strip().split("\n") if line]
 
     if len(output_lines) != len(all_points):
-        return f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
+        return (
+            f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
+        )
 
     # Parse results
     parsed = []
@@ -919,7 +955,9 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
 
         # logp comparison
         if has_constant_offset:
-            adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(abs(vp.logp), 1.0)
+            adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(
+                abs(vp.logp), 1.0
+            )
         else:
             adjusted_err = abs(rust_logp - vp.logp) / max(abs(vp.logp), 1.0)
 
@@ -961,33 +999,38 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     if not errors:
         state.validated = True
         if verbose:
-            print(f"  [validate_logp] PASSED!")
-        state.optimization_log.append(OptimizationEvent(
-            turn=state.tool_calls,
-            timestamp=time.time() - state.t0_loop,
-            event_type="validation",
-            status="PASS",
-            description="Validation passed",
-            code_hash=_code_hash(state.build_path),
-        ))
+            print("  [validate_logp] PASSED!")
+        state.optimization_log.append(
+            OptimizationEvent(
+                turn=state.tool_calls,
+                timestamp=time.time() - state.t0_loop,
+                event_type="validation",
+                status="PASS",
+                description="Validation passed",
+                code_hash=_code_hash(state.build_path),
+            )
+        )
         return f"VALIDATION PASSED!\n\n{report}"
     else:
         if verbose:
             print(f"  [validate_logp] FAILED ({len(errors)} errors)")
-        state.optimization_log.append(OptimizationEvent(
-            turn=state.tool_calls,
-            timestamp=time.time() - state.t0_loop,
-            event_type="validation",
-            status="FAIL",
-            description=f"Validation failed ({len(errors)} errors)",
-            code_hash=_code_hash(state.build_path),
-        ))
-        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(errors)
+        state.optimization_log.append(
+            OptimizationEvent(
+                turn=state.tool_calls,
+                timestamp=time.time() - state.t0_loop,
+                event_type="validation",
+                status="FAIL",
+                description=f"Validation failed ({len(errors)} errors)",
+                code_hash=_code_hash(state.build_path),
+            )
+        )
+        return (
+            f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n"
+            + "\n".join(errors)
+        )
 
 
-def _tool_read_file(
-    input_data: dict, state: _AgentState, verbose: bool
-) -> str:
+def _tool_read_file(input_data: dict, state: _AgentState, verbose: bool) -> str:
     """Read a file from the build directory."""
     rel_path = input_data.get("path", "")
     if not rel_path:
@@ -1116,13 +1159,13 @@ def _setup_enzyme_toolchain(build_path: Path) -> None:
     toolchain_file = build_path / "rust-toolchain.toml"
     if toolchain_file.exists():
         return
-    toolchain_file.write_text(
-        '[toolchain]\nchannel = "nightly"\n'
-    )
+    toolchain_file.write_text('[toolchain]\nchannel = "nightly"\n')
 
 
 def _setup_rust_project(
-    build_path: Path, ctx, extra_cargo_deps: dict[str, str] | None = None,
+    build_path: Path,
+    ctx,
+    extra_cargo_deps: dict[str, str] | None = None,
     build_rs: str | None = None,
 ):
     """Create the Rust project structure with pre-generated data."""
@@ -1138,7 +1181,7 @@ def _setup_rust_project(
     ]
     for dep_name, dep_version in (extra_cargo_deps or {}).items():
         if dep_version.startswith("{"):
-            deps_lines.append(f'{dep_name} = {dep_version}')
+            deps_lines.append(f"{dep_name} = {dep_version}")
         else:
             deps_lines.append(f'{dep_name} = "{dep_version}"')
 
@@ -1371,17 +1414,19 @@ def _bench_logp_tool(state: _AgentState, verbose: bool) -> str:
     if verbose:
         print(f"  [bench_logp] {us_per_eval:.3f} us/eval ({n_evals:,} evaluations)")
 
-    state.optimization_log.append(OptimizationEvent(
-        turn=state.tool_calls,
-        timestamp=time.time() - state.t0_loop,
-        event_type="benchmark",
-        status="OK",
-        us_per_eval=us_per_eval,
-        description=f"{us_per_eval:.3f} us/eval",
-        code_hash=_code_hash(state.build_path),
-    ))
+    state.optimization_log.append(
+        OptimizationEvent(
+            turn=state.tool_calls,
+            timestamp=time.time() - state.t0_loop,
+            event_type="benchmark",
+            status="OK",
+            us_per_eval=us_per_eval,
+            description=f"{us_per_eval:.3f} us/eval",
+            code_hash=_code_hash(state.build_path),
+        )
+    )
 
-    return f"Benchmark: {us_per_eval:.3f} us/eval ({n_evals:,} evaluations, {1e6/us_per_eval:,.0f} evals/sec)"
+    return f"Benchmark: {us_per_eval:.3f} us/eval ({n_evals:,} evaluations, {1e6 / us_per_eval:,.0f} evals/sec)"
 
 
 def optimize_model(
@@ -1450,35 +1495,43 @@ def optimize_model(
     state = _AgentState(
         build_path=build_path,
         ctx=ctx,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Optimize this Rust logp+gradient implementation for maximum speed.\n\n"
-                "The code is CORRECT and passes validation. Your goal is to make it faster "
-                "while keeping output numerically identical.\n\n"
-                "Steps:\n"
-                "1. Run `bench_logp` to get the baseline speed\n"
-                "2. Read the current code with `read_file`\n"
-                "3. Apply optimizations and write the new code\n"
-                "4. Build and validate (correctness must be preserved!)\n"
-                "5. Benchmark again to measure improvement\n"
-                "6. Iterate if there's more to gain\n\n"
-                f"The model has {ctx.n_params} parameters and the code is {len(current_code)} chars.\n"
-                f"Build directory: {build_path}\n"
-            ),
-        }],
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Optimize this Rust logp+gradient implementation for maximum speed.\n\n"
+                    "The code is CORRECT and passes validation. Your goal is to make it faster "
+                    "while keeping output numerically identical.\n\n"
+                    "Steps:\n"
+                    "1. Run `bench_logp` to get the baseline speed\n"
+                    "2. Read the current code with `read_file`\n"
+                    "3. Apply optimizations and write the new code\n"
+                    "4. Build and validate (correctness must be preserved!)\n"
+                    "5. Benchmark again to measure improvement\n"
+                    "6. Iterate if there's more to gain\n\n"
+                    f"The model has {ctx.n_params} parameters and the code is {len(current_code)} chars.\n"
+                    f"Build directory: {build_path}\n"
+                ),
+            }
+        ],
     )
 
     if verbose:
         print(f"\nStarting optimization loop (build_dir={build_path})...")
 
     # Detect skills for system prompt augmentation
-    skills = _detect_skills(model, ctx, use_cuda=use_cuda, use_accelerate=use_accelerate, use_enzyme=use_enzyme)
+    skills = _detect_skills(
+        model,
+        ctx,
+        use_cuda=use_cuda,
+        use_accelerate=use_accelerate,
+        use_enzyme=use_enzyme,
+    )
     system_prompt = OPTIMIZE_SYSTEM_PROMPT
     for skill_name in skills:
         content = _load_skill(skill_name)
         if content:
-            system_prompt += f"\n\n{'='*60}\n{content}"
+            system_prompt += f"\n\n{'=' * 60}\n{content}"
 
     total_input_tokens = 0
     total_output_tokens = 0
@@ -1486,7 +1539,7 @@ def optimize_model(
     best_us = None
 
     for turn in range(max_turns):
-        t0 = time.time()
+        time.time()
         response = client.messages.create(
             model=model_name,
             max_tokens=16384,
@@ -1499,7 +1552,9 @@ def optimize_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
+                print(
+                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
+                )
 
         if response.stop_reason == "end_turn":
             if verbose:
@@ -1539,11 +1594,13 @@ def optimize_model(
                                     break
                 else:
                     result = _execute_tool(block.name, block.input, state, verbose)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    }
+                )
 
         state.messages.append({"role": "user", "content": tool_results})
 

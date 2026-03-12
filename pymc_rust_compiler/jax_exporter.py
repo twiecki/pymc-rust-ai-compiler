@@ -20,6 +20,7 @@ import numpy as np
 @dataclass
 class TensorInfo:
     """Metadata about a single parameter tensor or output."""
+
     name: str
     shape: list[int]
     dtype: str
@@ -33,6 +34,7 @@ class TensorInfo:
 @dataclass
 class ValidationPoint:
     """A set of inputs/params and expected outputs + gradients."""
+
     params: dict[str, list | float]
     inputs: dict[str, list | float]
     output: list | float
@@ -42,6 +44,7 @@ class ValidationPoint:
 @dataclass
 class ModelContext:
     """All information extracted from a JAX model."""
+
     source_framework: str  # "jax" or "pytorch"
     source_code: str | None
     params: list[TensorInfo]
@@ -121,31 +124,39 @@ class JaxModelExporter:
         param_infos = []
         for name, val in self.params.items():
             arr = np.asarray(val)
-            param_infos.append(TensorInfo(
-                name=name,
-                shape=list(arr.shape),
-                dtype=str(arr.dtype),
-                size=int(np.prod(arr.shape)) if arr.shape else 1,
-            ))
+            param_infos.append(
+                TensorInfo(
+                    name=name,
+                    shape=list(arr.shape),
+                    dtype=str(arr.dtype),
+                    size=int(np.prod(arr.shape)) if arr.shape else 1,
+                )
+            )
 
         # Extract input info
         input_infos = []
         if isinstance(self.sample_input, dict):
             for name, val in self.sample_input.items():
                 arr = np.asarray(val)
-                input_infos.append(TensorInfo(
-                    name=name, shape=list(arr.shape),
-                    dtype=str(arr.dtype),
-                    size=int(np.prod(arr.shape)) if arr.shape else 1,
-                ))
+                input_infos.append(
+                    TensorInfo(
+                        name=name,
+                        shape=list(arr.shape),
+                        dtype=str(arr.dtype),
+                        size=int(np.prod(arr.shape)) if arr.shape else 1,
+                    )
+                )
         else:
             arr = np.asarray(self.sample_input)
             name = self.input_names[0] if self.input_names else "x"
-            input_infos.append(TensorInfo(
-                name=name, shape=list(arr.shape),
-                dtype=str(arr.dtype),
-                size=int(np.prod(arr.shape)) if arr.shape else 1,
-            ))
+            input_infos.append(
+                TensorInfo(
+                    name=name,
+                    shape=list(arr.shape),
+                    dtype=str(arr.dtype),
+                    size=int(np.prod(arr.shape)) if arr.shape else 1,
+                )
+            )
 
         # Determine the function to differentiate
         if self._loss_fn is not None:
@@ -157,9 +168,11 @@ class JaxModelExporter:
             test_out = self.fn(self.params, self.sample_input)
             test_arr = np.asarray(test_out)
             if test_arr.ndim == 0 or test_arr.size == 1:
+
                 def scalar_fn(params, x):
                     return jnp.sum(self.fn(params, x))
             else:
+
                 def scalar_fn(params, x):
                     return jnp.sum(self.fn(params, x))
 
@@ -168,11 +181,14 @@ class JaxModelExporter:
         # Extract output info from a forward pass
         output = self.fn(self.params, self.sample_input)
         out_arr = np.asarray(output)
-        output_infos = [TensorInfo(
-            name="output", shape=list(out_arr.shape),
-            dtype=str(out_arr.dtype),
-            size=int(np.prod(out_arr.shape)) if out_arr.shape else 1,
-        )]
+        output_infos = [
+            TensorInfo(
+                name="output",
+                shape=list(out_arr.shape),
+                dtype=str(out_arr.dtype),
+                size=int(np.prod(out_arr.shape)) if out_arr.shape else 1,
+            )
+        ]
 
         # Generate validation points
         rng = np.random.default_rng(self._seed)
@@ -180,12 +196,14 @@ class JaxModelExporter:
 
         # Point 0: original params
         grads = grad_fn(self.params, self.sample_input)
-        validation_points.append(ValidationPoint(
-            params={k: np.asarray(v).tolist() for k, v in self.params.items()},
-            inputs=self._input_to_dict(self.sample_input),
-            output=out_arr.tolist(),
-            grad_params={k: np.asarray(v).tolist() for k, v in grads.items()},
-        ))
+        validation_points.append(
+            ValidationPoint(
+                params={k: np.asarray(v).tolist() for k, v in self.params.items()},
+                inputs=self._input_to_dict(self.sample_input),
+                output=out_arr.tolist(),
+                grad_params={k: np.asarray(v).tolist() for k, v in grads.items()},
+            )
+        )
 
         # Extra points: perturbed params
         for _ in range(self._n_extra_points):
@@ -196,12 +214,14 @@ class JaxModelExporter:
 
             out = self.fn(perturbed, self.sample_input)
             grads = grad_fn(perturbed, self.sample_input)
-            validation_points.append(ValidationPoint(
-                params={k: np.asarray(v).tolist() for k, v in perturbed.items()},
-                inputs=self._input_to_dict(self.sample_input),
-                output=np.asarray(out).tolist(),
-                grad_params={k: np.asarray(v).tolist() for k, v in grads.items()},
-            ))
+            validation_points.append(
+                ValidationPoint(
+                    params={k: np.asarray(v).tolist() for k, v in perturbed.items()},
+                    inputs=self._input_to_dict(self.sample_input),
+                    output=np.asarray(out).tolist(),
+                    grad_params={k: np.asarray(v).tolist() for k, v in grads.items()},
+                )
+            )
 
         source = self._source_code or self._try_extract_source()
 

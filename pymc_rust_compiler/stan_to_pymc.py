@@ -10,7 +10,6 @@ from __future__ import annotations
 import functools
 import json
 import os
-import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,9 +140,13 @@ class StanToPyMCResult:
     timings: dict[str, float]
     n_tool_calls: int = 0
     conversation_turns: int = 0
-    token_usage: dict[str, int] = field(default_factory=lambda: {
-        "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
-    })
+    token_usage: dict[str, int] = field(
+        default_factory=lambda: {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+        }
+    )
 
     @property
     def success(self) -> bool:
@@ -192,7 +195,7 @@ def _build_system_prompt() -> str:
     for skill_name in ("stan_to_pymc", "pymc_optimization"):
         content = _load_skill(skill_name)
         if content:
-            prompt += f"\n\n{'='*60}\n{content}"
+            prompt += f"\n\n{'=' * 60}\n{content}"
     return prompt
 
 
@@ -217,9 +220,7 @@ def _build_user_prompt(
             if arr.ndim == 0:
                 parts.append(f"- `{name}`: scalar = {value}")
             else:
-                parts.append(
-                    f"- `{name}`: shape={list(arr.shape)}, dtype={arr.dtype}"
-                )
+                parts.append(f"- `{name}`: shape={list(arr.shape)}, dtype={arr.dtype}")
         parts.append("")
 
     # Parameter info
@@ -302,13 +303,14 @@ def transpile_stan_to_pymc(
 
     # Build reference points
     reference_points = [
-        {"point": ctx.initial_point.point, "logp": ctx.initial_point.logp,
-         "dlogp": ctx.initial_point.dlogp},
+        {
+            "point": ctx.initial_point.point,
+            "logp": ctx.initial_point.logp,
+            "dlogp": ctx.initial_point.dlogp,
+        },
     ]
     for pt in ctx.extra_points:
-        reference_points.append(
-            {"point": pt.point, "logp": pt.logp, "dlogp": pt.dlogp}
-        )
+        reference_points.append({"point": pt.point, "logp": pt.logp, "dlogp": pt.dlogp})
 
     if verbose:
         print(
@@ -319,7 +321,10 @@ def transpile_stan_to_pymc(
     # Step 2: Build prompts
     system_prompt = _build_system_prompt()
     user_prompt = _build_user_prompt(
-        stan_code, data, reference_points, list(ctx.unc_param_names),
+        stan_code,
+        data,
+        reference_points,
+        list(ctx.unc_param_names),
     )
 
     # Step 3: Agent loop
@@ -384,11 +389,13 @@ def transpile_stan_to_pymc(
             elif block.type == "tool_use":
                 state.tool_calls += 1
                 result = _execute_tool(block.name, block.input, state, verbose)
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": block.id,
-                    "content": result,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    }
+                )
 
                 if state.validated:
                     break
@@ -421,7 +428,10 @@ def transpile_stan_to_pymc(
 
 
 def _execute_tool(
-    name: str, input_data: dict, state: _AgentState, verbose: bool,
+    name: str,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     """Execute a tool and return the result string."""
     if name == "write_pymc_code":
@@ -435,7 +445,9 @@ def _execute_tool(
 
 
 def _tool_write_pymc_code(
-    input_data: dict, state: _AgentState, verbose: bool,
+    input_data: dict,
+    state: _AgentState,
+    verbose: bool,
 ) -> str:
     code = input_data.get("code", "")
     if not code:
@@ -481,8 +493,6 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
             print(f"  [validate_model] Model construction error: {e}")
         return f"Error building PyMC model: {type(e).__name__}: {e}"
 
-    import pymc as pm
-
     # Get the logp function in unconstrained space
     try:
         logp_fn = model.compile_logp()
@@ -498,19 +508,20 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
     # sampling but causes logp comparison mismatches.
     _HALF_RV_OPS = {"HalfNormalRV", "HalfCauchyRV", "HalfStudentTRV", "HalfFlatRV"}
     n_half = sum(
-        1 for rv in model.free_RVs
-        if type(rv.owner.op).__name__ in _HALF_RV_OPS
+        1 for rv in model.free_RVs if type(rv.owner.op).__name__ in _HALF_RV_OPS
     )
     half_logp_correction = n_half * np.log(2)
     if verbose and n_half > 0:
-        print(f"  [validate_model] Found {n_half} Half* distribution(s), "
-              f"applying log(2) correction of {half_logp_correction:.4f}")
+        print(
+            f"  [validate_model] Found {n_half} Half* distribution(s), "
+            f"applying log(2) correction of {half_logp_correction:.4f}"
+        )
 
     # Map unconstrained point to PyMC's internal variable order
     # We need to understand how PyMC orders its unconstrained parameters
     # vs how BridgeStan does it
     try:
-        ip = model.initial_point()
+        model.initial_point()
         unc_var_names = [v.name for v in model.value_vars]
     except Exception as e:
         return f"Error getting model variable info: {type(e).__name__}: {e}"
@@ -534,7 +545,9 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
         # Build a point dict for PyMC: map unconstrained values to PyMC variables
         try:
             point_dict = _map_unc_point_to_pymc(
-                model, unc_point, state.unc_param_names,
+                model,
+                unc_point,
+                state.unc_param_names,
             )
         except Exception as e:
             report_lines.append(f"{label}: ERROR mapping point: {e}")
@@ -567,10 +580,7 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
         diffs = [ref - pymc for _, ref, pymc in point_results]
         mean_diff = sum(diffs) / len(diffs)
 
-        correction_note = (
-            f" (Half* corrected, {n_half} dists)"
-            if n_half > 0 else ""
-        )
+        correction_note = f" (Half* corrected, {n_half} dists)" if n_half > 0 else ""
 
         for label, ref_logp, corrected_logp in point_results:
             diff = ref_logp - corrected_logp
@@ -607,10 +617,7 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
         label, ref_logp, corrected_logp = point_results[0]
         rel_err = abs(corrected_logp - ref_logp) / max(abs(ref_logp), 1.0)
         status = "OK" if rel_err <= 1e-2 else "MISMATCH"
-        correction_note = (
-            f" (Half* corrected, {n_half} dists)"
-            if n_half > 0 else ""
-        )
+        correction_note = f" (Half* corrected, {n_half} dists)" if n_half > 0 else ""
         report_lines.append(
             f"{label}: logp BridgeStan={ref_logp:.6f} PyMC={corrected_logp:.6f}"
             f"{correction_note} rel_err={rel_err:.2e} [{status}]"
@@ -636,8 +643,7 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
             print(f"  [validate_model] FAILED ({len(errors)} errors)")
         return (
             f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\n"
-            f"Errors:\n" + "\n".join(errors)
-            + "\n\nHints:\n"
+            f"Errors:\n" + "\n".join(errors) + "\n\nHints:\n"
             "- Check that all prior distributions match (including parameter names)\n"
             "- Ensure Stan constraints map to correct PyMC distributions "
             "(e.g. real<lower=0> with normal prior → HalfNormal)\n"
@@ -655,7 +661,9 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
 
 
 def _map_unc_point_to_pymc(
-    model, unc_point: np.ndarray, stan_param_names: list[str],
+    model,
+    unc_point: np.ndarray,
+    stan_param_names: list[str],
 ) -> dict:
     """Map a BridgeStan unconstrained point to a PyMC point dict.
 
@@ -685,10 +693,16 @@ def _map_unc_point_to_pymc(
     for var in pymc_vars:
         var_name = var.name
         # Strip PyMC transform suffixes
-        base_name = re.sub(r"_(log|logodds|interval|circular|ordered|simplex)__$", "", var_name)
+        base_name = re.sub(
+            r"_(log|logodds|interval|circular|ordered|simplex)__$", "", var_name
+        )
 
         # Determine size of this variable
-        var_size = int(np.prod(var.type.shape) if hasattr(var.type, 'shape') and var.type.shape else 1)
+        var_size = int(
+            np.prod(var.type.shape)
+            if hasattr(var.type, "shape") and var.type.shape
+            else 1
+        )
 
         # Find matching Stan param group
         matched = False

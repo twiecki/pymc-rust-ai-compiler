@@ -36,9 +36,9 @@ class StanModelContext:
 
     stan_code: str
     params: list[StanParamInfo]
-    param_names: list[str]        # constrained names
-    unc_param_names: list[str]    # unconstrained names
-    n_params: int                 # unconstrained count
+    param_names: list[str]  # constrained names
+    unc_param_names: list[str]  # unconstrained names
+    n_params: int  # unconstrained count
     n_params_constrained: int
     data_json: str | None
     data_summary: dict[str, dict]  # name → {shape, dtype, min, max, mean}
@@ -177,7 +177,9 @@ class StanModelExporter:
             unc_param_names=list(unc_param_names),
             n_params=n_unconstrained,
             n_params_constrained=n_constrained,
-            data_json=json.dumps(self._data) if isinstance(self._data, dict) else self._data,
+            data_json=json.dumps(self._data)
+            if isinstance(self._data, dict)
+            else self._data,
             data_summary=data_summary,
             initial_point=initial,
             extra_points=extra_points,
@@ -251,13 +253,17 @@ class StanModelExporter:
                 for name, value in self._data.items():
                     arr = np.asarray(value)
                     if arr.ndim == 0 and np.issubdtype(arr.dtype, np.integer):
-                        parts.append(f"- `{name.upper()}: usize = {int(arr)}`  (scalar integer)")
+                        parts.append(
+                            f"- `{name.upper()}: usize = {int(arr)}`  (scalar integer)"
+                        )
 
         parts.append("")
 
         # Validation
         parts.append("## Validation")
-        parts.append("Your generated code MUST produce these exact values (within float64 precision):\n")
+        parts.append(
+            "Your generated code MUST produce these exact values (within float64 precision):\n"
+        )
         parts.append(
             "NOTE: BridgeStan computes log_density with jacobian=True, propto=True.\n"
             "This means the log density INCLUDES Jacobian adjustments for constrained parameters\n"
@@ -335,7 +341,8 @@ mod tests {
 
 
 def _build_param_info(
-    param_names: list[str], unc_param_names: list[str],
+    param_names: list[str],
+    unc_param_names: list[str],
 ) -> list[StanParamInfo]:
     """Build parameter info by grouping related constrained/unconstrained names.
 
@@ -344,6 +351,7 @@ def _build_param_info(
     - Vector: "theta.1", "theta.2" (constrained), "theta.1", "theta.2" (unc)
     - Constrained: "sigma" (constrained), "sigma" (unconstrained, log-transformed)
     """
+
     # Group by base name (strip .N suffixes)
     def base_name(name: str) -> str:
         return re.sub(r"\.\d+$", "", name)

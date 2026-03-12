@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pymc as pm
+
 try:
     from pytensor.graph.traversal import graph_inputs
 except ImportError:
@@ -24,9 +25,9 @@ class ParamInfo:
     name: str
     value_var: str
     transform: str | None
-    shape: list[int]       # original RV shape
-    unc_shape: list[int]   # unconstrained (value_var) shape
-    size: int              # unconstrained size
+    shape: list[int]  # original RV shape
+    unc_shape: list[int]  # unconstrained (value_var) shape
+    size: int  # unconstrained size
     zerosum_axes: list[int] | None = None  # axes for ZeroSumTransform
 
     @property
@@ -128,7 +129,9 @@ class RustModelExporter:
             transform = model.rvs_to_transforms.get(rv, None)
             # Use value_var shape for unconstrained size (transforms may change dims)
             rv_shape = list(rv.type.shape) if hasattr(rv.type, "shape") else []
-            unc_shape = list(value_var.type.shape) if hasattr(value_var.type, "shape") else []
+            unc_shape = (
+                list(value_var.type.shape) if hasattr(value_var.type, "shape") else []
+            )
             size = int(np.prod(unc_shape)) if unc_shape else 1
             zs_axes = None
             if transform and type(transform).__name__ == "ZeroSumTransform":
@@ -294,7 +297,11 @@ class RustModelExporter:
             if np.all(flat == np.floor(flat)) and np.min(flat) == 0:
                 unique_vals = np.unique(flat)
                 max_val = int(np.max(flat))
-                if max_val >= 2 and max_val < 200 and np.array_equal(unique_vals, np.arange(max_val + 1)):
+                if (
+                    max_val >= 2
+                    and max_val < 200
+                    and np.array_equal(unique_vals, np.arange(max_val + 1))
+                ):
                     is_index = True
                     n_groups = max_val + 1
 
@@ -326,16 +333,20 @@ class RustModelExporter:
         hints = []
 
         # Find variable names used in indexing: a[group_idx] → group_idx
-        index_vars = set(_re.findall(r'\w+\[(\w+)\]', source))
+        index_vars = set(_re.findall(r"\w+\[(\w+)\]", source))
         # Find other variable names that are likely data arrays (not parameters)
         # Parameters are defined with ~ or = expressions
-        param_names = set(_re.findall(r'(\w+)\s*~', source))
-        param_names.update(_re.findall(r'(\w+)\s*=\s*\w+', source))
+        param_names = set(_re.findall(r"(\w+)\s*~", source))
+        param_names.update(_re.findall(r"(\w+)\s*=\s*\w+", source))
 
         # Covariates: match index arrays to index variables, others to remaining vars
         covariate_items = list(ctx.covariate_data.items())
-        index_covariates = [(n, i) for n, i in covariate_items if i.get("is_index_array")]
-        non_index_covariates = [(n, i) for n, i in covariate_items if not i.get("is_index_array")]
+        index_covariates = [
+            (n, i) for n, i in covariate_items if i.get("is_index_array")
+        ]
+        non_index_covariates = [
+            (n, i) for n, i in covariate_items if not i.get("is_index_array")
+        ]
 
         # Match index covariates to index variables from source
         # If only one index covariate and one index variable, match them directly
@@ -348,7 +359,9 @@ class RustModelExporter:
                 f"(integer indices, {n_groups} groups, cast to `usize` for indexing)"
             )
         else:
-            for (cov_name, cov_info), src_var in zip(index_covariates, sorted(index_vars)):
+            for (cov_name, cov_info), src_var in zip(
+                index_covariates, sorted(index_vars)
+            ):
                 n_groups = cov_info.get("n_groups", 0)
                 hints.append(
                     f"`{src_var}` in source → `{cov_name.upper()}_DATA` "
@@ -357,21 +370,21 @@ class RustModelExporter:
 
         # Match remaining covariates to non-index, non-parameter variables
         # Look for variables used in arithmetic but not defined as params
-        arith_vars = set(_re.findall(r'[\+\-\*]\s*(\w+)', source))
+        arith_vars = set(_re.findall(r"[\+\-\*]\s*(\w+)", source))
         arith_vars -= param_names
         arith_vars -= index_vars
-        arith_vars -= {'observed', 'shape'}
+        arith_vars -= {"observed", "shape"}
         remaining_src_vars = sorted(arith_vars)
 
-        for (cov_name, cov_info), src_var in zip(non_index_covariates, remaining_src_vars):
-            hints.append(
-                f"`{src_var}` in source → `{cov_name.upper()}_DATA`"
-            )
+        for (cov_name, cov_info), src_var in zip(
+            non_index_covariates, remaining_src_vars
+        ):
+            hints.append(f"`{src_var}` in source → `{cov_name.upper()}_DATA`")
 
         # Observed data mapping
         for obs_name in ctx.observed_data:
             # Find the observed variable in source (pattern: var ~ ..., observed)
-            obs_match = _re.search(r'(\w+)\s*~.*observed', source)
+            obs_match = _re.search(r"(\w+)\s*~.*observed", source)
             if obs_match:
                 src_obs = obs_match.group(1)
                 hints.append(
@@ -520,7 +533,7 @@ class RustModelExporter:
                 if is_obs:
                     label = "observed"
                 elif is_idx:
-                    label = f"INTEGER INDEX ARRAY (values 0..{n_groups-1}, {n_groups} groups) — cast to usize for array indexing"
+                    label = f"INTEGER INDEX ARRAY (values 0..{n_groups - 1}, {n_groups} groups) — cast to usize for array indexing"
                 else:
                     label = "covariate/predictor"
                 parts.append(
@@ -539,9 +552,13 @@ class RustModelExporter:
                         parts.append(f"- {hint}")
             parts.append("")
 
-        parts.append(f"## Optimized PyTensor Graph (logp)\n```\n{ctx.logp_graph}\n```\n")
+        parts.append(
+            f"## Optimized PyTensor Graph (logp)\n```\n{ctx.logp_graph}\n```\n"
+        )
 
-        parts.append(f"## Optimized PyTensor Graph (dlogp/gradient)\n```\n{ctx.dlogp_graph}\n```\n")
+        parts.append(
+            f"## Optimized PyTensor Graph (dlogp/gradient)\n```\n{ctx.dlogp_graph}\n```\n"
+        )
 
         parts.append("## Individual logp terms (optimized, per RV)\n")
         for name, term in ctx.logp_terms.items():
@@ -549,7 +566,9 @@ class RustModelExporter:
             parts.append(f"### {name}\n```\n{display}\n```\n")
 
         parts.append("## Validation")
-        parts.append("Your generated code MUST produce these exact values (within float64 precision):\n")
+        parts.append(
+            "Your generated code MUST produce these exact values (within float64 precision):\n"
+        )
 
         parts.append(f"At initial point: {json.dumps(ctx.initial_point.point)}")
         parts.append(f"- logp = {ctx.initial_point.logp:.10f}")

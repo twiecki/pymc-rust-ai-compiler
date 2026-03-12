@@ -62,7 +62,9 @@ with pm.Model() as model:
     mu_y = a[group_idx] + b * x
     y = pm.Normal("y", mu=mu_y, sigma=sigma_y, observed=y_obs)
 
-print(f"True: mu_a={true_mu_a}, sigma_a={true_sigma_a}, b={true_b}, sigma_y={true_sigma_y}")
+print(
+    f"True: mu_a={true_mu_a}, sigma_a={true_sigma_a}, b={true_b}, sigma_y={true_sigma_y}"
+)
 print(f"Data: {n_groups} groups, {N} observations")
 print(f"Group sizes: {n_per_group}")
 print()
@@ -76,8 +78,8 @@ result = compile_model(
 
 if result.success:
     print(f"\nCompilation successful in {result.n_attempts} attempt(s)!")
-    print(f"\nNow you can benchmark:")
-    print(f"  python -c 'from pymc_rust_compiler.benchmark import *; ...'")
+    print("\nNow you can benchmark:")
+    print("  python -c 'from pymc_rust_compiler.benchmark import *; ...'")
 else:
     print(f"\nCompilation FAILED after {result.n_attempts} attempts")
     for err in result.validation_errors[:5]:

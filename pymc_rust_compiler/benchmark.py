@@ -17,7 +17,9 @@ from pymc.model.transform.optimization import freeze_dims_and_data
 _BENCH_RUNNER_DIR = Path(__file__).resolve().parent.parent / "bench_runner"
 
 
-def benchmark_nutpie(model: pm.Model, draws: int = 2000, tune: int = 1000, chains: int = 4) -> dict:
+def benchmark_nutpie(
+    model: pm.Model, draws: int = 2000, tune: int = 1000, chains: int = 4
+) -> dict:
     """Benchmark PyMC sampling with nutpie backend."""
     print(f"  nutpie: {chains} chains x {draws} draws...")
     start = time.time()
@@ -41,7 +43,9 @@ def benchmark_nutpie(model: pm.Model, draws: int = 2000, tune: int = 1000, chain
     }
 
 
-def benchmark_rust(build_dir: str | Path, draws: int = 2000, tune: int = 1000, chains: int = 4) -> dict:
+def benchmark_rust(
+    build_dir: str | Path, draws: int = 2000, tune: int = 1000, chains: int = 4
+) -> dict:
     """Benchmark the AI-compiled Rust sampler."""
     build_dir = Path(build_dir)
     binary = build_dir / "target" / "release" / "sample"
@@ -85,7 +89,10 @@ def benchmark_rust(build_dir: str | Path, draws: int = 2000, tune: int = 1000, c
 # logp+dlogp evaluation benchmark (no sampling overhead)
 # ---------------------------------------------------------------------------
 
-def _make_test_point(model: pm.Model, rng: np.random.Generator | None = None) -> np.ndarray:
+
+def _make_test_point(
+    model: pm.Model, rng: np.random.Generator | None = None
+) -> np.ndarray:
     """Generate a random unconstrained test point in model variable order.
 
     Uses a random point (instead of the initial point) to avoid
@@ -106,7 +113,9 @@ def _prepare_frozen_inputs(model, x0_model_order=None):
     Returns (jit_fn, x0, frozen_rv, model_fn).
     """
     frozen_model = freeze_dims_and_data(model)
-    logp_dlogp_wrapper = frozen_model.logp_dlogp_function(ravel_inputs=True, mode="NUMBA")
+    logp_dlogp_wrapper = frozen_model.logp_dlogp_function(
+        ravel_inputs=True, mode="NUMBA"
+    )
     logp_dlogp_fn = logp_dlogp_wrapper._pytensor_function
     logp_dlogp_fn.trust_input = True
 
@@ -121,7 +130,9 @@ def _prepare_frozen_inputs(model, x0_model_order=None):
     # Reorder x0 from model order → frozen order for this function
     model_ip = {v.name: ip[v.name] for v in model_fn._grad_vars}
     model_rv = DictToArrayBijection.map(model_ip)
-    x0_dict = DictToArrayBijection.rmap(RaveledVars(x0_model_order, model_rv.point_map_info))
+    x0_dict = DictToArrayBijection.rmap(
+        RaveledVars(x0_model_order, model_rv.point_map_info)
+    )
     frozen_ip = {name: x0_dict[name] for name in frozen_vars}
     frozen_rv = DictToArrayBijection.map(frozen_ip)
     x0 = frozen_rv.data
@@ -144,7 +155,9 @@ def _reorder_dlogp(dlogp_val, frozen_rv, model_fn):
 
 
 def benchmark_logp_pytensor(
-    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
+    model: pm.Model,
+    n_evals: int = 10_000,
+    x0_model_order: np.ndarray | None = None,
 ) -> dict:
     """Benchmark PyTensor's compiled logp+dlogp function (what nutpie calls).
 
@@ -181,6 +194,7 @@ def benchmark_logp_pytensor(
 # Numba cfunc benchmark: Rust calling Numba via C function pointer (like nutpie)
 # ---------------------------------------------------------------------------
 
+
 def _build_bench_runner() -> ctypes.CDLL:
     """Build and load the bench_runner shared library."""
     so_path = _BENCH_RUNNER_DIR / "target" / "release" / "libbench_runner.so"
@@ -195,13 +209,13 @@ def _build_bench_runner() -> ctypes.CDLL:
     lib = ctypes.CDLL(str(so_path))
     lib.bench_logp_cfunc.restype = ctypes.c_double
     lib.bench_logp_cfunc.argtypes = [
-        ctypes.c_size_t,     # func_ptr (usize)
-        ctypes.c_uint64,     # dim
-        ctypes.c_void_p,     # x_ptr
-        ctypes.c_uint64,     # n_warmup
-        ctypes.c_uint64,     # n_iters
-        ctypes.c_void_p,     # logp_out
-        ctypes.c_void_p,     # grad_out
+        ctypes.c_size_t,  # func_ptr (usize)
+        ctypes.c_uint64,  # dim
+        ctypes.c_void_p,  # x_ptr
+        ctypes.c_uint64,  # n_warmup
+        ctypes.c_uint64,  # n_iters
+        ctypes.c_void_p,  # logp_out
+        ctypes.c_void_p,  # grad_out
     ]
     return lib
 
@@ -213,10 +227,10 @@ def _make_numba_cfunc(jit_fn, n_dim: int):
     can call directly with zero Python overhead.
     """
     c_sig = numba.types.int64(
-        numba.types.uint64,                          # dim
-        numba.types.CPointer(numba.types.float64),   # x (input)
-        numba.types.CPointer(numba.types.float64),   # grad (output)
-        numba.types.CPointer(numba.types.float64),   # logp (output)
+        numba.types.uint64,  # dim
+        numba.types.CPointer(numba.types.float64),  # x (input)
+        numba.types.CPointer(numba.types.float64),  # grad (output)
+        numba.types.CPointer(numba.types.float64),  # logp (output)
     )
 
     @numba.cfunc(c_sig)
@@ -233,7 +247,9 @@ def _make_numba_cfunc(jit_fn, n_dim: int):
 
 
 def benchmark_logp_numba_cfunc(
-    model: pm.Model, n_evals: int = 10_000, x0_model_order: np.ndarray | None = None,
+    model: pm.Model,
+    n_evals: int = 10_000,
+    x0_model_order: np.ndarray | None = None,
 ) -> dict:
     """Benchmark Numba logp+dlogp called from Rust via C function pointer.
 
@@ -261,7 +277,7 @@ def benchmark_logp_numba_cfunc(
         cfunc.address,
         n_dim,
         x_arr.ctypes.data,
-        200,       # warmup
+        200,  # warmup
         n_evals,
         logp_arr.ctypes.data,
         grad_arr.ctypes.data,
@@ -282,7 +298,9 @@ def benchmark_logp_numba_cfunc(
 
 
 def benchmark_logp_rust(
-    build_dir: str | Path, model: pm.Model, n_evals: int = 10_000,
+    build_dir: str | Path,
+    model: pm.Model,
+    n_evals: int = 10_000,
     x0_model_order: np.ndarray | None = None,
 ) -> dict:
     """Benchmark the AI-compiled Rust logp+dlogp function."""
@@ -339,7 +357,9 @@ def benchmark_logp_rust(
     }
 
 
-def print_logp_comparison(pytensor_result: dict, rust_result: dict, model_name: str = ""):
+def print_logp_comparison(
+    pytensor_result: dict, rust_result: dict, model_name: str = ""
+):
     """Print logp+dlogp evaluation benchmark comparison."""
     header = f"LOGP+DLOGP BENCHMARK{f': {model_name}' if model_name else ''}"
     print("\n" + "=" * 65)
@@ -354,7 +374,9 @@ def print_logp_comparison(pytensor_result: dict, rust_result: dict, model_name: 
         print(f"{pt['backend']:<20} {'ERROR':<12}")
     else:
         evals_per_sec_pt = 1e6 / pt["us_per_eval"]
-        print(f"{pt['backend']:<20} {pt['us_per_eval']:<12.2f} {evals_per_sec_pt:<14,.0f} {'1.00x':<10}")
+        print(
+            f"{pt['backend']:<20} {pt['us_per_eval']:<12.2f} {evals_per_sec_pt:<14,.0f} {'1.00x':<10}"
+        )
 
     rs = rust_result
     if "error" in rs:
@@ -362,23 +384,33 @@ def print_logp_comparison(pytensor_result: dict, rust_result: dict, model_name: 
     else:
         evals_per_sec_rs = 1e6 / rs["us_per_eval"]
         speedup = pt["us_per_eval"] / rs["us_per_eval"] if "error" not in pt else 0
-        print(f"{'rust-ai':<20} {rs['us_per_eval']:<12.2f} {evals_per_sec_rs:<14,.0f} {speedup:<10.2f}x")
+        print(
+            f"{'rust-ai':<20} {rs['us_per_eval']:<12.2f} {evals_per_sec_rs:<14,.0f} {speedup:<10.2f}x"
+        )
 
         # Check logp and dlogp agreement
         if "error" not in pt:
             logp_diff = abs(pt["logp"] - rs["logp"])
             logp_rel_err = logp_diff / max(abs(pt["logp"]), 1e-10)
             logp_ok = logp_rel_err < 1e-4
-            logp_status = "MATCH" if logp_ok else f"MISMATCH (rel_err={logp_rel_err:.2e})"
-            print(f"\n  logp check:  pytensor={pt['logp']:.8f}  rust={rs['logp']:.8f}  [{logp_status}]")
+            logp_status = (
+                "MATCH" if logp_ok else f"MISMATCH (rel_err={logp_rel_err:.2e})"
+            )
+            print(
+                f"\n  logp check:  pytensor={pt['logp']:.8f}  rust={rs['logp']:.8f}  [{logp_status}]"
+            )
 
             pt_dlogp = pt["dlogp"]
             rs_dlogp = rs["dlogp"]
             dlogp_abs_err = np.max(np.abs(pt_dlogp - rs_dlogp))
             dlogp_rel_err = dlogp_abs_err / max(np.max(np.abs(pt_dlogp)), 1e-10)
             dlogp_ok = dlogp_rel_err < 1e-4
-            dlogp_status = "MATCH" if dlogp_ok else f"MISMATCH (rel_err={dlogp_rel_err:.2e})"
-            print(f"  dlogp check: pytensor={pt_dlogp}  rust={rs_dlogp}  [{dlogp_status}]")
+            dlogp_status = (
+                "MATCH" if dlogp_ok else f"MISMATCH (rel_err={dlogp_rel_err:.2e})"
+            )
+            print(
+                f"  dlogp check: pytensor={pt_dlogp}  rust={rs_dlogp}  [{dlogp_status}]"
+            )
 
             assert logp_ok, (
                 f"logp mismatch: pytensor={pt['logp']:.10f} rust={rs['logp']:.10f} "
@@ -402,12 +434,16 @@ def print_comparison(nutpie_result: dict, rust_result: dict):
     print("-" * 54)
 
     nt = nutpie_result["elapsed_s"]
-    print(f"{'nutpie':<20} {nt:<12.2f} {nutpie_result['throughput']:<12.0f} {'1.00x':<10}")
+    print(
+        f"{'nutpie':<20} {nt:<12.2f} {nutpie_result['throughput']:<12.0f} {'1.00x':<10}"
+    )
 
     if "error" not in rust_result:
         rt = rust_result["elapsed_s"]
         speedup = nt / rt
-        print(f"{'rust-ai':<20} {rt:<12.2f} {rust_result['throughput']:<12.0f} {speedup:<10.2f}x")
+        print(
+            f"{'rust-ai':<20} {rt:<12.2f} {rust_result['throughput']:<12.0f} {speedup:<10.2f}x"
+        )
     else:
         print(f"{'rust-ai':<20} {'FAILED':<12}")
 

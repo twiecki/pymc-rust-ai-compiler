@@ -56,14 +56,14 @@ if __name__ == "__main__":
         verbose=True,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Success: {result.success}")
     print(f"Tool calls: {result.n_tool_calls}")
     print(f"Validation attempts: {result.n_attempts}")
     print(f"Tokens: {result.token_usage}")
 
     if result.success:
-        print(f"\n--- Generated PyMC Code ---")
+        print("\n--- Generated PyMC Code ---")
         print(result.pymc_code)
 
         model = result.get_model(data)

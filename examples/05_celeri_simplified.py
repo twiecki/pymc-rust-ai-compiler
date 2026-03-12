@@ -39,25 +39,39 @@ from pymc_rust_compiler import compile_model
 # --- Synthetic tectonic data ---
 np.random.seed(42)
 
-n_blocks = 3        # tectonic blocks
-n_faults = 4        # fault segments
-n_stations = 25     # GPS stations
-n_bounded = 3       # faults with geologic slip rate bounds
+n_blocks = 3  # tectonic blocks
+n_faults = 4  # fault segments
+n_stations = 25  # GPS stations
+n_bounded = 3  # faults with geologic slip rate bounds
 
 # True parameters
-true_rotation = np.array([
-    0.5, -0.3, 0.1,   # Block 1: wx, wy, wz (rad/Gyr)
-    -0.2, 0.4, -0.1,  # Block 2
-    0.1, -0.1, 0.3,   # Block 3
-])
+true_rotation = np.array(
+    [
+        0.5,
+        -0.3,
+        0.1,  # Block 1: wx, wy, wz (rad/Gyr)
+        -0.2,
+        0.4,
+        -0.1,  # Block 2
+        0.1,
+        -0.1,
+        0.3,  # Block 3
+    ]
+)
 rotation_scale = np.array([1.0, 1.0, 0.5] * n_blocks)  # prior scales
 
-true_slip = np.array([
-    2.0, 0.5,    # Fault 1: strike-slip, dip-slip (mm/yr)
-    -1.5, 1.0,   # Fault 2
-    0.8, -0.3,   # Fault 3
-    -0.5, 0.2,   # Fault 4
-])
+true_slip = np.array(
+    [
+        2.0,
+        0.5,  # Fault 1: strike-slip, dip-slip (mm/yr)
+        -1.5,
+        1.0,  # Fault 2
+        0.8,
+        -0.3,  # Fault 3
+        -0.5,
+        0.2,  # Fault 4
+    ]
+)
 slip_prior_sigma = 5.0
 
 # Design matrices (Green's functions)
@@ -84,7 +98,7 @@ bound_values = np.clip(true_slip[bounded_fault_idx], lower_bounds, upper_bounds)
 # Regularization
 gamma = 2.0  # regularization strength
 
-print(f"Tectonic block model:")
+print("Tectonic block model:")
 print(f"  {n_blocks} blocks ({n_blocks * 3} rotation params)")
 print(f"  {n_faults} faults ({n_faults * 2} slip rate params)")
 print(f"  {n_stations} GPS stations ({n_stations * 2} velocity observations)")
@@ -124,9 +138,8 @@ with pm.Model() as model:
     slip_rate = pm.Normal("slip_rate", mu=0, sigma=slip_prior_sigma, shape=n_faults * 2)
 
     # Predicted GPS velocities via design matrices
-    predicted_velocity = (
-        pm.math.dot(G_rotation, rotation)
-        + pm.math.dot(G_slip, slip_rate)
+    predicted_velocity = pm.math.dot(G_rotation, rotation) + pm.math.dot(
+        G_slip, slip_rate
     )
 
     # GPS station velocity likelihood (StudentT for heavy tails)
@@ -167,7 +180,7 @@ result = compile_model(
 )
 
 if result.success:
-    print(f"\nCompilation successful!")
+    print("\nCompilation successful!")
     print(f"  Builds: {result.n_attempts}")
     print(f"  Tool calls: {result.n_tool_calls}")
     print(f"  Turns: {result.conversation_turns}")
@@ -195,6 +208,8 @@ if result.success:
     print(f"\nTrue rotation: {true_rotation}")
     print(f"True slip rates: {true_slip}")
 else:
-    print(f"\nCompilation FAILED after {result.n_attempts} builds, {result.n_tool_calls} tool calls")
+    print(
+        f"\nCompilation FAILED after {result.n_attempts} builds, {result.n_tool_calls} tool calls"
+    )
     for err in result.validation_errors[:5]:
         print(f"  - {err}")

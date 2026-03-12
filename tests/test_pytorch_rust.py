@@ -31,7 +31,9 @@ class TestRustProjectSetup:
                 super().__init__()
                 self.fc = nn.Linear(2, 3)
                 with torch.no_grad():
-                    self.fc.weight.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
+                    self.fc.weight.copy_(
+                        torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+                    )
                     self.fc.bias.copy_(torch.tensor([0.1, 0.2, 0.3]))
 
             def forward(self, x):
@@ -92,12 +94,17 @@ class TestTranspilerTools:
         import torch
         import torch.nn as nn
         from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
-        from pymc_rust_compiler.pytorch_rust_transpiler import _AgentState, _setup_rust_project
+        from pymc_rust_compiler.pytorch_rust_transpiler import (
+            _AgentState,
+            _setup_rust_project,
+        )
 
         class Linear(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
+                self.w = nn.Parameter(
+                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
+                )
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -122,7 +129,9 @@ class TestTranspilerTools:
         from pymc_rust_compiler.pytorch_rust_transpiler import _tool_write_code
 
         result = _tool_write_code(
-            {"code": "use crate::data::*;\npub fn forward(input: &[f32]) -> Vec<f32> { vec![] }\npub fn forward_with_grad(input: &[f32], _p: &str) -> (Vec<f32>, Vec<f32>) { (vec![], vec![]) }\n"},
+            {
+                "code": "use crate::data::*;\npub fn forward(input: &[f32]) -> Vec<f32> { vec![] }\npub fn forward_with_grad(input: &[f32], _p: &str) -> (Vec<f32>, Vec<f32>) { (vec![], vec![]) }\n"
+            },
             agent_state,
             verbose=False,
         )
@@ -194,7 +203,9 @@ class TestValidation:
         class Simple(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
+                self.w = nn.Parameter(
+                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
+                )
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -217,7 +228,6 @@ class TestValidation:
 
     def test_output_matches_pytorch(self, simple_model_context):
         """Verify that the exporter captured the correct forward pass output."""
-        import torch
 
         ctx = simple_model_context
         vp = ctx.validation_points[0]
@@ -251,12 +261,17 @@ class TestFullPipeline:
         import torch
         import torch.nn as nn
         from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
-        from pymc_rust_compiler.pytorch_rust_transpiler import _AgentState, _setup_rust_project
+        from pymc_rust_compiler.pytorch_rust_transpiler import (
+            _AgentState,
+            _setup_rust_project,
+        )
 
         class Simple(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
+                self.w = nn.Parameter(
+                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
+                )
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -280,7 +295,9 @@ class TestFullPipeline:
     def test_correct_rust_validates(self, model_and_state):
         """Write manually correct Rust code and verify it passes validation."""
         from pymc_rust_compiler.pytorch_rust_transpiler import (
-            _tool_write_code, _tool_cargo_build, _tool_validate,
+            _tool_write_code,
+            _tool_cargo_build,
+            _tool_validate,
         )
 
         try:
@@ -291,7 +308,7 @@ class TestFullPipeline:
         state = model_and_state
 
         # Write correct Rust implementation of y = x @ w + b
-        rust_code = '''
+        rust_code = """
 use crate::data::*;
 
 /// Forward pass: y = x @ w + b
@@ -341,7 +358,7 @@ pub fn forward_with_grad(input: &[f32], param_name: &str) -> (Vec<f32>, Vec<f32>
         _ => (output, vec![])
     }
 }
-'''
+"""
         _tool_write_code({"code": rust_code}, state, verbose=False)
 
         build_result = _tool_cargo_build(state, verbose=False)
@@ -377,7 +394,11 @@ class TestSkills:
         from pymc_rust_compiler.pytorch_rust_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_rust")
-        assert "backward" in skill.lower() or "backprop" in skill.lower() or "gradient" in skill.lower()
+        assert (
+            "backward" in skill.lower()
+            or "backprop" in skill.lower()
+            or "gradient" in skill.lower()
+        )
 
 
 # ── Result Type Tests ────────────────────────────────────────────────────────
@@ -432,7 +453,6 @@ class TestPromptBuilding:
     """Test that user prompts are built correctly."""
 
     def test_prompt_contains_model_info(self):
-        import torch
         import torch.nn as nn
         from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
         from pymc_rust_compiler.pytorch_rust_transpiler import _build_user_prompt
