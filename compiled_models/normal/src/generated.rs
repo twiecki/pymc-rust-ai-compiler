@@ -16,8 +16,17 @@ impl LogpError for SampleError {
 
 pub const N_PARAMS: usize = 2;
 
-// Constants
-const LN_2PI: f64 = 1.8378770664093453; // ln(2*pi)
+const LN_2PI: f64 = 1.8378770664093453; // ln(2π)
+
+// Precomputed constants for priors
+const MU_PRIOR_LOGP_CONST: f64 = -0.5 * LN_2PI - 2.3025850929940457; // -ln(10)
+const MU_PRIOR_VAR_INV: f64 = 0.01; // 1/100
+
+const SIGMA_PRIOR_LOGP_CONST: f64 = 0.6931471805599453 - 0.5 * LN_2PI - 1.6094379124341003; // ln(2) - ln(5)
+const SIGMA_PRIOR_SCALE_SQ: f64 = 0.04; // 1/25
+
+// Likelihood constants
+const LIKELIHOOD_LOGP_CONST: f64 = -0.5 * LN_2PI;
 
 #[derive(Storable, Clone)]
 pub struct Draw {
@@ -47,65 +56,94 @@ impl CpuLogpFunc for GeneratedLogp {
         let log_sigma = position[1];
         let sigma = log_sigma.exp();
         
-        // Initialize gradient
-        gradient[0] = 0.0;
-        gradient[1] = 0.0;
-        
-        let mut logp_total = 0.0;
-        
-        // Prior for mu ~ Normal(0, 10)
-        // logp = -0.5*log(2*pi) - log(10) - 0.5*((mu - 0)/10)^2
-        let mu_prior_logp = -0.5 * LN_2PI - (10.0_f64).ln() - 0.5 * (mu / 10.0).powi(2);
-        logp_total += mu_prior_logp;
-        
-        // Gradient for mu prior: d/d_mu = -(mu - 0)/(10^2) = -mu/100
-        gradient[0] += -mu / 100.0;
-        
-        // Prior for sigma ~ HalfNormal(0, 5) with LogTransform
-        // The prior is on sigma = exp(log_sigma)
-        // HalfNormal(sigma | 5): logp = log(2) - 0.5*log(2*pi) - log(5) - 0.5*(sigma/5)^2
-        // Plus Jacobian: + log_sigma
-        let sigma_scaled = sigma / 5.0;
-        let half_normal_logp = 2.0_f64.ln() - 0.5 * LN_2PI - 5.0_f64.ln() - 0.5 * sigma_scaled * sigma_scaled;
-        let sigma_prior_logp = half_normal_logp + log_sigma; // Jacobian adjustment
-        logp_total += sigma_prior_logp;
-        
-        // Gradient for sigma prior w.r.t. log_sigma
-        // d/d_log_sigma = -sigma^2/25 + 1
-        gradient[1] += -sigma * sigma / 25.0 + 1.0;
-        
-        // Likelihood for y ~ Normal(mu, sigma)
-        // For each observation: logp = -0.5*log(2*pi) - log(sigma) - 0.5*((y[i] - mu)/sigma)^2
-        
+        // Precompute values used in likelihood
         let inv_sigma = 1.0 / sigma;
         let inv_sigma_sq = inv_sigma * inv_sigma;
-        let neg_log_sigma = -log_sigma; // Since sigma = exp(log_sigma), log(sigma) = log_sigma
-        let log_norm_constant = -0.5 * LN_2PI + neg_log_sigma;
         
-        let mut grad_mu_accum = 0.0;
-        let mut grad_log_sigma_accum = 0.0;
+        // Prior: mu ~ Normal(0, 10)
+        let mu_sq = mu * mu;
+        let mu_logp = MU_PRIOR_LOGP_CONST - 0.5 * mu_sq * MU_PRIOR_VAR_INV;
+        let mu_grad = -mu * MU_PRIOR_VAR_INV;
         
-        for i in 0..Y_N {
-            let residual = Y_DATA[i] - mu;
-            let residual_scaled = residual * inv_sigma;
+        // Prior: sigma ~ HalfNormal(5) with LogTransform + Jacobian
+        let sigma_sq = sigma * sigma;
+        let sigma_logp = SIGMA_PRIOR_LOGP_CONST - 0.5 * sigma_sq * SIGMA_PRIOR_SCALE_SQ + log_sigma;
+        let sigma_grad = -sigma_sq * SIGMA_PRIOR_SCALE_SQ + 1.0;
+        
+        // Likelihood: y ~ Normal(mu, sigma) - highly optimized loop
+        let likelihood_log_norm = LIKELIHOOD_LOGP_CONST - log_sigma;
+        
+        // Use separate accumulator variables for better SIMD potential
+        let mut sum_logp_terms = 0.0;
+        let mut sum_residuals = 0.0;
+        let mut sum_residual_squares = 0.0;
+        
+        // Optimized loop with explicit vectorization hints
+        unsafe {
+            let y_ptr = Y_DATA.as_ptr();
             
-            // Likelihood contribution
-            logp_total += log_norm_constant - 0.5 * residual_scaled * residual_scaled;
+            // Process in chunks of 8 for better SIMD utilization
+            let chunks = Y_N / 8;
+            let remainder = Y_N % 8;
             
-            // Gradients
-            let residual_scaled_sq = residual_scaled * residual_scaled;
+            for chunk in 0..chunks {
+                let base_idx = chunk * 8;
+                
+                // Load 8 values and compute residuals
+                let y0 = *y_ptr.add(base_idx);
+                let y1 = *y_ptr.add(base_idx + 1);
+                let y2 = *y_ptr.add(base_idx + 2);
+                let y3 = *y_ptr.add(base_idx + 3);
+                let y4 = *y_ptr.add(base_idx + 4);
+                let y5 = *y_ptr.add(base_idx + 5);
+                let y6 = *y_ptr.add(base_idx + 6);
+                let y7 = *y_ptr.add(base_idx + 7);
+                
+                let r0 = y0 - mu;
+                let r1 = y1 - mu;
+                let r2 = y2 - mu;
+                let r3 = y3 - mu;
+                let r4 = y4 - mu;
+                let r5 = y5 - mu;
+                let r6 = y6 - mu;
+                let r7 = y7 - mu;
+                
+                // Accumulate residuals for gradient
+                sum_residuals += r0 + r1 + r2 + r3 + r4 + r5 + r6 + r7;
+                
+                // Compute and accumulate squared residuals
+                let r0_sq = r0 * r0;
+                let r1_sq = r1 * r1;
+                let r2_sq = r2 * r2;
+                let r3_sq = r3 * r3;
+                let r4_sq = r4 * r4;
+                let r5_sq = r5 * r5;
+                let r6_sq = r6 * r6;
+                let r7_sq = r7 * r7;
+                
+                sum_residual_squares += r0_sq + r1_sq + r2_sq + r3_sq + r4_sq + r5_sq + r6_sq + r7_sq;
+            }
             
-            // d/d_mu = (y[i] - mu)/sigma^2 = residual * inv_sigma_sq
-            grad_mu_accum += residual * inv_sigma_sq;
-            
-            // d/d_log_sigma = -1 + (y[i] - mu)^2/sigma^2 = -1 + residual_scaled^2
-            grad_log_sigma_accum += -1.0 + residual_scaled_sq;
+            // Handle remaining elements
+            for i in (chunks * 8)..Y_N {
+                let y_i = *y_ptr.add(i);
+                let residual = y_i - mu;
+                sum_residuals += residual;
+                sum_residual_squares += residual * residual;
+            }
         }
         
-        gradient[0] += grad_mu_accum;
-        gradient[1] += grad_log_sigma_accum;
+        // Compute final values
+        let sum_residual_squares_scaled = sum_residual_squares * inv_sigma_sq;
+        let likelihood_logp = (Y_N as f64) * likelihood_log_norm - 0.5 * sum_residual_squares_scaled;
         
-        Ok(logp_total)
+        // Total logp and gradients
+        let total_logp = mu_logp + sigma_logp + likelihood_logp;
+        
+        gradient[0] = mu_grad + sum_residuals * inv_sigma_sq;
+        gradient[1] = sigma_grad + sum_residual_squares_scaled - (Y_N as f64);
+        
+        Ok(total_logp)
     }
 
     fn expand_vector<R: rand::Rng + ?Sized>(

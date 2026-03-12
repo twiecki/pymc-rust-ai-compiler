@@ -10,10 +10,6 @@ rand = "0.10"
 thiserror = "2"
 anyhow = "1"
 
-
-[lib]
-crate-type = ["cdylib", "rlib"]
-
 [[bin]]
 name = "validate"
 path = "src/validate.rs"

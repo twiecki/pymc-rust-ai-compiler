@@ -1,14 +1,15 @@
-use pymc_compiled_model::GeneratedLogp;
+
+use pymc_compiled_model::generated::GeneratedLogp;
 use nuts_rs::CpuLogpFunc;
-use std::time::Instant;
 use std::io::{self, BufRead};
+use std::time::Instant;
 
 fn main() {
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
 
     // First line: number of iterations
-    let n_iters: u64 = lines.next().unwrap().unwrap().trim().parse().unwrap();
+    let n_iters: usize = lines.next().unwrap().unwrap().trim().parse().unwrap();
 
     // Second line: parameter vector
     let param_line = lines.next().unwrap().unwrap();
