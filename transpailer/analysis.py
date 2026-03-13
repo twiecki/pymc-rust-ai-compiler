@@ -171,10 +171,11 @@ def plot_optimization_progress(
     )
 
     # Annotate kept improvements
-    for i, rec in zip(keep_idx, keep_us):
+    kept_records = [records[i] for i in keep_idx]
+    for i, us, rec in zip(keep_idx, keep_us, kept_records):
         ax.annotate(
             rec.code_hash if len(records) <= 30 else "",
-            (i, rec),
+            (i, us),
             textcoords="offset points",
             xytext=(5, 8),
             fontsize=7,

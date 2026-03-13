@@ -1,0 +1,14 @@
+turn	timestamp_s	event_type	status	us_per_eval	code_hash	description
+1	2.19	benchmark	KEEP	0.669	d5c8bbab	0.669 us/eval
+4	48.40	write_code	OK		633e7ebc	Wrote 8028 chars
+5	50.75	build	PASS		633e7ebc	Build OK (0.5s)
+6	52.22	validation	FAIL		633e7ebc	Validation failed (3 errors)
+7	83.12	write_code	OK		5dab1b16	Wrote 8735 chars
+8	85.18	build	PASS		5dab1b16	Build OK (0.5s)
+9	86.74	validation	PASS		5dab1b16	Validation passed
+10	88.96	benchmark	KEEP	0.613	5dab1b16	0.613 us/eval
+11	120.92	write_code	OK		65902974	Wrote 8549 chars
+12	123.33	build	PASS		65902974	Build OK (0.5s)
+13	124.66	validation	PASS		65902974	Validation passed
+14	126.38	benchmark	DISCARD	0.649	65902974	0.649 us/eval
+15	161.31	write_code	OK		aaf4d43f	Wrote 6168 chars
