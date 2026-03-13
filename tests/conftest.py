@@ -1,4 +1,4 @@
-"""Shared fixtures for pymc-rust-compiler tests."""
+"""Shared fixtures for transpailer tests."""
 
 from __future__ import annotations
 

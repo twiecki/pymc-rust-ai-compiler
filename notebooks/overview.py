@@ -118,7 +118,7 @@ def _(mo):
 
 @app.cell
 def _(linreg_model):
-    from pymc_rust_compiler.exporter import RustModelExporter
+    from transpailer.exporter import RustModelExporter
 
     SOURCE = """alpha ~ Normal(0, 10)
     beta ~ Normal(0, 10)
@@ -435,7 +435,7 @@ def _(mo):
     ## Architecture
 
     ```
-    pymc_rust_compiler/
+    transpailer/
     ├── exporter.py      # Extract: pm.Model() → ModelContext → LLM prompt
     ├── compiler.py      # Generate + Build + Validate loop
     └── benchmark.py     # Compare: nutpie vs AI-compiled Rust
@@ -483,7 +483,7 @@ def _(mo):
     ## Try It
 
     ```python
-    from pymc_rust_compiler import compile_model
+    from transpailer import compile_model
 
     result = compile_model(
         model,

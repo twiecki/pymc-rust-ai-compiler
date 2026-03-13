@@ -5,7 +5,7 @@ It's the fairest comparison of what the Rust compiler actually produces vs
 what nutpie calls under the hood (pytensor's compiled logp_dlogp_function).
 
 Usage:
-    cd pymc-rust-ai-compiler
+    cd transpailer
     uv run python examples/bench_logp.py
 """
 
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pymc as pm
 
-from pymc_rust_compiler.benchmark import (
+from transpailer.benchmark import (
     _make_test_point,
     benchmark_logp_numba_cfunc,
     benchmark_logp_pytensor,

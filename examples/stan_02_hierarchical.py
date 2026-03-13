@@ -3,7 +3,7 @@
 Classic Eight Schools example — non-centered parameterization.
 """
 
-from pymc_rust_compiler import compile_stan_model
+from transpailer import compile_stan_model
 
 STAN_CODE = """
 data {

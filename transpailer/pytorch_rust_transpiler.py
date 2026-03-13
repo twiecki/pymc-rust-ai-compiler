@@ -23,7 +23,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from pymc_rust_compiler.jax_exporter import ModelContext, ValidationPoint
+from transpailer.jax_exporter import ModelContext, ValidationPoint
 
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
@@ -1095,7 +1095,7 @@ def transpile_pytorch_to_rust(
     if backend not in ("pure", "burn"):
         raise ValueError(f"backend must be 'pure' or 'burn', got {backend!r}")
 
-    from pymc_rust_compiler.pytorch_exporter import PytorchModelExporter
+    from transpailer.pytorch_exporter import PytorchModelExporter
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:

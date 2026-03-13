@@ -6,7 +6,7 @@ validates that logp values match via BridgeStan.
 
 import numpy as np
 
-from pymc_rust_compiler import transpile_stan_to_pymc
+from transpailer import transpile_stan_to_pymc
 
 STAN_CODE = """
 data {

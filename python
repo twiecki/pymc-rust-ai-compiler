@@ -46,7 +46,7 @@ result = compile_model(
 if result.success:
     print(f"\nCompilation successful in {result.n_attempts} attempt(s)!")
     print(f"Timings: {result.timings}")
-    print("\nGenerated Rust code saved to: compiled_models/normal/src/generated.rs")
+    print(f"\nGenerated Rust code saved to: compiled_models/normal/src/generated.rs")
 else:
     print(f"\nCompilation FAILED after {result.n_attempts} attempts")
     for err in result.validation_errors:

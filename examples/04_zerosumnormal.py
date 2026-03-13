@@ -30,7 +30,7 @@ Unconstrained parameters:
 import numpy as np
 import pymc as pm
 
-from pymc_rust_compiler import compile_model
+from transpailer import compile_model
 
 # --- Synthetic retail sales data ---
 np.random.seed(314)

@@ -5,7 +5,7 @@ Equivalent to examples/01_normal.py but starting from Stan code.
 
 import numpy as np
 
-from pymc_rust_compiler import compile_stan_model
+from transpailer import compile_stan_model
 
 STAN_CODE = """
 data {

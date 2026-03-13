@@ -1,8 +1,8 @@
-# Bayes AI Compiler
+# Transpailer
 
 An AI agent that acts as a compiler for computational models. It transpiles between probabilistic programming languages (PyMC, Stan), deep learning frameworks (JAX, PyTorch), and compiles to optimized Rust — with numerical validation at every step.
 
-**[Read the blog post →](https://twiecki.io/blog/2026/03/10/pymc-rust-ai-compiler/)**
+**[Read the blog post →](https://twiecki.io/blog/2026/03/10/transpailer/)**
 
 ## How it works
 
@@ -88,7 +88,7 @@ uv sync  # or: pip install -e .
 
 ```python
 import pymc as pm
-from pymc_rust_compiler import compile_model
+from transpailer import compile_model
 
 with pm.Model() as model:
     mu = pm.Normal("mu", 0, 10)
@@ -133,7 +133,7 @@ python examples/mingpt_to_rust.py
 ## Architecture
 
 ```
-pymc_rust_compiler/
+transpailer/
 ├── exporter.py       # Extract parameters, transforms, logp graph from pm.Model()
 ├── compiler.py       # Agentic loop: Claude API → Rust code → build → validate
 ├── stan_exporter.py  # Extract Stan model context via BridgeStan
@@ -166,7 +166,7 @@ compiled_models/    # Pre-compiled models (normal, linreg, hierarchical, GP, ...
 The same agentic architecture works for language-to-language translation. Claude generates PyMC code, validates logp against BridgeStan reference values, and iterates until the models match numerically. Used to translate all 120 models from [posteriordb](https://github.com/stan-dev/posteriordb) from Stan to PyMC.
 
 ```python
-from pymc_rust_compiler import transpile_stan_to_pymc
+from transpailer import transpile_stan_to_pymc
 
 stan_code = """
 data { int<lower=0> N; array[N] real y; }
@@ -188,7 +188,7 @@ The same agentic architecture generalizes to deep learning frameworks. Claude tr
 
 ```python
 import jax.numpy as jnp
-from pymc_rust_compiler import transpile_jax_to_pytorch
+from transpailer import transpile_jax_to_pytorch
 
 def forward(params, x):
     x = jax.nn.relu(x @ params["w1"] + params["b1"])
@@ -206,7 +206,7 @@ if result.success:
 
 ```python
 import torch.nn as nn
-from pymc_rust_compiler import transpile_pytorch_to_jax
+from transpailer import transpile_pytorch_to_jax
 
 class MLP(nn.Module):
     def __init__(self):
@@ -231,7 +231,7 @@ The agent uses the same agentic architecture with tools: `write_code` → `cargo
 
 ```python
 import torch.nn as nn
-from pymc_rust_compiler import transpile_pytorch_to_rust
+from transpailer import transpile_pytorch_to_rust
 
 class MLP(nn.Module):
     def __init__(self):

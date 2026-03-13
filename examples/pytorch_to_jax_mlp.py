@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from pymc_rust_compiler import transpile_pytorch_to_jax
+from transpailer import transpile_pytorch_to_jax
 
 
 class SimpleMLP(nn.Module):

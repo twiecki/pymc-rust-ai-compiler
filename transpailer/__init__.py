@@ -1,4 +1,4 @@
-"""Bayes AI Compiler: compile and transpile models across frameworks via LLM.
+"""Transpailer: compile and transpile models across frameworks via LLM.
 
 Supports: PyMC/Stan → Rust, Stan → PyMC, JAX ↔ PyTorch.
 """
@@ -9,92 +9,92 @@ import importlib
 from typing import TYPE_CHECKING
 
 # JAX ↔ PyTorch (no heavy deps at import time)
-from pymc_rust_compiler.jax_pytorch_transpiler import (
+from transpailer.jax_pytorch_transpiler import (
     transpile_jax_to_pytorch,
     transpile_pytorch_to_jax,
     TranspileResult,
 )
-from pymc_rust_compiler.jax_exporter import (
+from transpailer.jax_exporter import (
     JaxModelExporter,
     export_jax_model,
 )
-from pymc_rust_compiler.pytorch_exporter import (
+from transpailer.pytorch_exporter import (
     PytorchModelExporter,
     export_pytorch_model,
 )
-from pymc_rust_compiler.pytorch_rust_transpiler import (
+from transpailer.pytorch_rust_transpiler import (
     transpile_pytorch_to_rust,
     RustTranspileResult,
 )
 
 # PyMC/Stan imports are lazy — they pull in heavy deps (pymc, bridgestan)
 if TYPE_CHECKING:
-    from pymc_rust_compiler.exporter import (
+    from transpailer.exporter import (
         ModelContext,
         RustModelExporter,
         export_model,
     )
-    from pymc_rust_compiler.compiler import (
+    from transpailer.compiler import (
         compile_model,
         optimize_model,
         OptimizationEvent,
     )
-    from pymc_rust_compiler.analysis import (
+    from transpailer.analysis import (
         plot_optimization_progress,
         plot_waterfall,
         plot_timeline,
         print_summary,
     )
-    from pymc_rust_compiler.stan_exporter import (
+    from transpailer.stan_exporter import (
         StanModelContext,
         StanModelExporter,
         export_stan_model,
     )
-    from pymc_rust_compiler.stan_compiler import (
+    from transpailer.stan_compiler import (
         compile_stan_model,
         StanCompilationResult,
     )
-    from pymc_rust_compiler.stan_to_pymc import transpile_stan_to_pymc, StanToPyMCResult
+    from transpailer.stan_to_pymc import transpile_stan_to_pymc, StanToPyMCResult
 
 
 def __getattr__(name: str):
     """Lazy import for PyMC/Stan components."""
     _lazy_imports = {
-        "ModelContext": ("pymc_rust_compiler.exporter", "ModelContext"),
-        "RustModelExporter": ("pymc_rust_compiler.exporter", "RustModelExporter"),
-        "export_model": ("pymc_rust_compiler.exporter", "export_model"),
-        "compile_model": ("pymc_rust_compiler.compiler", "compile_model"),
-        "optimize_model": ("pymc_rust_compiler.compiler", "optimize_model"),
-        "OptimizationEvent": ("pymc_rust_compiler.compiler", "OptimizationEvent"),
+        "ModelContext": ("transpailer.exporter", "ModelContext"),
+        "RustModelExporter": ("transpailer.exporter", "RustModelExporter"),
+        "export_model": ("transpailer.exporter", "export_model"),
+        "compile_model": ("transpailer.compiler", "compile_model"),
+        "optimize_model": ("transpailer.compiler", "optimize_model"),
+        "OptimizationEvent": ("transpailer.compiler", "OptimizationEvent"),
         "plot_optimization_progress": (
-            "pymc_rust_compiler.analysis",
+            "transpailer.analysis",
             "plot_optimization_progress",
         ),
-        "plot_waterfall": ("pymc_rust_compiler.analysis", "plot_waterfall"),
-        "plot_timeline": ("pymc_rust_compiler.analysis", "plot_timeline"),
-        "print_summary": ("pymc_rust_compiler.analysis", "print_summary"),
-        "StanModelContext": ("pymc_rust_compiler.stan_exporter", "StanModelContext"),
-        "StanModelExporter": ("pymc_rust_compiler.stan_exporter", "StanModelExporter"),
-        "export_stan_model": ("pymc_rust_compiler.stan_exporter", "export_stan_model"),
+        "plot_waterfall": ("transpailer.analysis", "plot_waterfall"),
+        "plot_timeline": ("transpailer.analysis", "plot_timeline"),
+        "print_summary": ("transpailer.analysis", "print_summary"),
+        "StanModelContext": ("transpailer.stan_exporter", "StanModelContext"),
+        "StanModelExporter": ("transpailer.stan_exporter", "StanModelExporter"),
+        "export_stan_model": ("transpailer.stan_exporter", "export_stan_model"),
         "compile_stan_model": (
-            "pymc_rust_compiler.stan_compiler",
+            "transpailer.stan_compiler",
             "compile_stan_model",
         ),
         "StanCompilationResult": (
-            "pymc_rust_compiler.stan_compiler",
+            "transpailer.stan_compiler",
             "StanCompilationResult",
         ),
         "transpile_stan_to_pymc": (
-            "pymc_rust_compiler.stan_to_pymc",
+            "transpailer.stan_to_pymc",
             "transpile_stan_to_pymc",
         ),
-        "StanToPyMCResult": ("pymc_rust_compiler.stan_to_pymc", "StanToPyMCResult"),
+        "StanToPyMCResult": ("transpailer.stan_to_pymc", "StanToPyMCResult"),
     }
     if name in _lazy_imports:
         module_path, attr = _lazy_imports[name]
         module = importlib.import_module(module_path)
         return getattr(module, attr)
-    raise AttributeError(f"module 'pymc_rust_compiler' has no attribute {name!r}")
+    raise AttributeError(f"module 'transpailer' has no attribute {name!r}")
 
 
 __all__ = [
@@ -136,6 +136,6 @@ __all__ = [
 
 def to_nutpie(compile_result, model):
     """Convert a CompilationResult to a nutpie-compatible model. Lazy import."""
-    from pymc_rust_compiler.nutpie_bridge import to_nutpie as _to_nutpie
+    from transpailer.nutpie_bridge import to_nutpie as _to_nutpie
 
     return _to_nutpie(compile_result, model)

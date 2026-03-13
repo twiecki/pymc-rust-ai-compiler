@@ -12,7 +12,7 @@ PyMC model:
 import numpy as np
 import pymc as pm
 
-from pymc_rust_compiler import compile_model
+from transpailer import compile_model
 
 # Generate synthetic data
 np.random.seed(42)

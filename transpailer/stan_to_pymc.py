@@ -295,7 +295,7 @@ def transpile_stan_to_pymc(
     if verbose:
         print("Extracting reference values via BridgeStan...")
     t0 = time.time()
-    from pymc_rust_compiler.stan_exporter import StanModelExporter
+    from transpailer.stan_exporter import StanModelExporter
 
     exporter = StanModelExporter(stan_code, data=data)
     ctx = exporter.context

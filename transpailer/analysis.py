@@ -6,7 +6,7 @@ Bayesian autoresearcher.
 
 Usage:
     # From a CompilationResult:
-    from pymc_rust_compiler.analysis import plot_optimization_progress
+    from transpailer.analysis import plot_optimization_progress
     fig = plot_optimization_progress(result)
 
     # From a results.tsv file:
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pymc_rust_compiler.compiler import CompilationResult
+    from transpailer.compiler import CompilationResult
 
 
 @dataclass

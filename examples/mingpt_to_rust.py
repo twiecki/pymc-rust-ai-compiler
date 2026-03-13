@@ -1,4 +1,4 @@
-"""Transpile Karpathy's minGPT to Rust using bayes-ai-compiler.
+"""Transpile Karpathy's minGPT to Rust using transpailer.
 
 This script:
 1. Creates a small GPT model (gpt-nano: 3 layers, 3 heads, 48 embd)
@@ -210,7 +210,7 @@ def main():
     print()
 
     # Step 3: Transpile to Rust
-    print("Step 3: Transpiling to Rust via bayes-ai-compiler...")
+    print("Step 3: Transpiling to Rust via transpailer...")
     print("  (This will run an agentic Claude loop — may take a few minutes)")
     print()
 
@@ -298,7 +298,7 @@ class MinGPTCore(nn.Module):
         return logits.view(-1)
 """
 
-    from pymc_rust_compiler import transpile_pytorch_to_rust
+    from transpailer import transpile_pytorch_to_rust
 
     # Use "burn" backend for optimized tensors + autodiff, or "pure" for zero-dep
     backend = sys.argv[1] if len(sys.argv) > 1 else "burn"

@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from pymc_rust_compiler import transpile_jax_to_pytorch
+from transpailer import transpile_jax_to_pytorch
 
 
 def mlp_forward(params, x):

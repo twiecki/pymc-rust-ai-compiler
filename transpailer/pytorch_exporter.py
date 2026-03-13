@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import numpy as np
 
-from pymc_rust_compiler.jax_exporter import ModelContext, TensorInfo, ValidationPoint
+from transpailer.jax_exporter import ModelContext, TensorInfo, ValidationPoint
 
 
 class PytorchModelExporter:

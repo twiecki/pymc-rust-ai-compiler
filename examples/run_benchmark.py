@@ -14,8 +14,8 @@ This will:
 import numpy as np
 import pymc as pm
 
-from pymc_rust_compiler import compile_model
-from pymc_rust_compiler.benchmark import (
+from transpailer import compile_model
+from transpailer.benchmark import (
     benchmark_nutpie,
     benchmark_rust,
     print_comparison,

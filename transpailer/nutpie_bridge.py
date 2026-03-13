@@ -2,8 +2,8 @@
 
 Usage:
     import pymc as pm
-    from pymc_rust_compiler import compile_model
-    from pymc_rust_compiler.nutpie_bridge import to_nutpie
+    from transpailer import compile_model
+    from transpailer.nutpie_bridge import to_nutpie
 
     with pm.Model() as model:
         ...
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pymc as pm
 
-from pymc_rust_compiler.compiler import CompilationResult
+from transpailer.compiler import CompilationResult
 
 
 def _build_shared_lib(build_dir: Path) -> Path:

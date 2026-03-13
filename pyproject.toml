@@ -1,7 +1,7 @@
 [project]
-name = "pymc-rust-compiler"
+name = "transpailer"
 version = "0.1.0"
-description = "AI-powered model compiler: PyMC/Stan → Rust, JAX ↔ PyTorch via LLM"
+description = "The Transpailer: an AI agent that transpiles between any computational framework via LLM"
 authors = [{name = "Thomas Wiecki", email = "thomas.wiecki@pymc-labs.com"}]
 requires-python = ">= 3.11"
 dependencies = [
@@ -26,7 +26,7 @@ build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["pymc_rust_compiler"]
+packages = ["transpailer"]
 
 [dependency-groups]
 dev = [

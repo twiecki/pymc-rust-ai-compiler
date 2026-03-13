@@ -1,4 +1,4 @@
-"""Tests for pymc_rust_compiler.compiler."""
+"""Tests for transpailer.compiler."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 
-from pymc_rust_compiler.compiler import (
+from transpailer.compiler import (
     CompilationResult,
     _AgentState,
     _execute_tool,
@@ -16,7 +16,7 @@ from pymc_rust_compiler.compiler import (
     _tool_read_file,
     _tool_write_rust_code,
 )
-from pymc_rust_compiler.exporter import (
+from transpailer.exporter import (
     RustModelExporter,
 )
 
@@ -408,7 +408,7 @@ class TestExecuteTool:
 
 class TestToolDefinitions:
     def test_tools_list_has_five_tools(self):
-        from pymc_rust_compiler.compiler import TOOLS
+        from transpailer.compiler import TOOLS
 
         assert len(TOOLS) == 5
         tool_names = {t["name"] for t in TOOLS}
@@ -421,7 +421,7 @@ class TestToolDefinitions:
         }
 
     def test_system_prompt_exists(self):
-        from pymc_rust_compiler.compiler import SYSTEM_PROMPT
+        from transpailer.compiler import SYSTEM_PROMPT
 
         assert len(SYSTEM_PROMPT) > 100
         assert "CpuLogpFunc" in SYSTEM_PROMPT

@@ -1,4 +1,4 @@
-"""Tests for pymc_rust_compiler.exporter."""
+"""Tests for transpailer.exporter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pymc_rust_compiler.exporter import (
+from transpailer.exporter import (
     ParamInfo,
     RustModelExporter,
     ValidationPoint,

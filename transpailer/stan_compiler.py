@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pymc_rust_compiler.stan_exporter import StanModelExporter
+from transpailer.stan_exporter import StanModelExporter
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
