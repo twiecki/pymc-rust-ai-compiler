@@ -2503,6 +2503,7 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "bridgestan" },
+    { name = "click" },
     { name = "marimo" },
     { name = "numpy" },
     { name = "nutpie" },
@@ -2541,6 +2542,7 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.52" },
     { name = "bridgestan", specifier = ">=2.7.0" },
+    { name = "click", specifier = ">=8.0" },
     { name = "jax", marker = "extra == 'dl'", specifier = ">=0.4" },
     { name = "jax", marker = "extra == 'jax'", specifier = ">=0.4" },
     { name = "jaxlib", marker = "extra == 'dl'", specifier = ">=0.4" },

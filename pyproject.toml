@@ -12,6 +12,7 @@ dependencies = [
     "marimo>=0.20.4",
     "bridgestan>=2.7.0",
     "torch>=2.10.0",
+    "click>=8.0",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,9 @@ dev = ["pytest", "ruff"]
 jax = ["jax>=0.4", "jaxlib>=0.4"]
 torch = ["torch>=2.0"]
 dl = ["jax>=0.4", "jaxlib>=0.4", "torch>=2.0"]
+
+[project.scripts]
+transpailer = "transpailer.cli:cli"
 
 [build-system]
 build-backend = "hatchling.build"
