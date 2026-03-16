@@ -86,10 +86,7 @@ class ModelContext:
                     "logp": self.initial_point.logp,
                     "dlogp": self.initial_point.dlogp,
                 },
-                "extra_points": [
-                    {"point": p.point, "logp": p.logp, "dlogp": p.dlogp}
-                    for p in self.extra_points
-                ],
+                "extra_points": [{"point": p.point, "logp": p.logp, "dlogp": p.dlogp} for p in self.extra_points],
             },
         }
 
@@ -129,9 +126,7 @@ class RustModelExporter:
             transform = model.rvs_to_transforms.get(rv, None)
             # Use value_var shape for unconstrained size (transforms may change dims)
             rv_shape = list(rv.type.shape) if hasattr(rv.type, "shape") else []
-            unc_shape = (
-                list(value_var.type.shape) if hasattr(value_var.type, "shape") else []
-            )
+            unc_shape = list(value_var.type.shape) if hasattr(value_var.type, "shape") else []
             size = int(np.prod(unc_shape)) if unc_shape else 1
             zs_axes = None
             if transform and type(transform).__name__ == "ZeroSumTransform":
@@ -203,10 +198,7 @@ class RustModelExporter:
             return {name: float(fn(point)) for name, fn in per_rv_logp_fns.items()}
 
         initial = ValidationPoint(
-            point={
-                k: v.tolist() if hasattr(v, "tolist") else v
-                for k, v in test_point.items()
-            },
+            point={k: v.tolist() if hasattr(v, "tolist") else v for k, v in test_point.items()},
             logp=float(logp_fn(test_point)),
             dlogp=dlogp_fn(test_point).tolist(),
             per_rv_logp=_per_rv_logp(test_point),
@@ -246,9 +238,7 @@ class RustModelExporter:
         )
 
     @staticmethod
-    def _extract_covariates(
-        model: pm.Model, observed_data: dict[str, dict]
-    ) -> dict[str, dict]:
+    def _extract_covariates(model: pm.Model, observed_data: dict[str, dict]) -> dict[str, dict]:
         """Find non-scalar constant arrays in the logp graph (predictors/covariates).
 
         These are numpy arrays passed into the model (e.g. x in regression)
@@ -297,11 +287,7 @@ class RustModelExporter:
             if np.all(flat == np.floor(flat)) and np.min(flat) == 0:
                 unique_vals = np.unique(flat)
                 max_val = int(np.max(flat))
-                if (
-                    max_val >= 2
-                    and max_val < 200
-                    and np.array_equal(unique_vals, np.arange(max_val + 1))
-                ):
+                if max_val >= 2 and max_val < 200 and np.array_equal(unique_vals, np.arange(max_val + 1)):
                     is_index = True
                     n_groups = max_val + 1
 
@@ -341,12 +327,8 @@ class RustModelExporter:
 
         # Covariates: match index arrays to index variables, others to remaining vars
         covariate_items = list(ctx.covariate_data.items())
-        index_covariates = [
-            (n, i) for n, i in covariate_items if i.get("is_index_array")
-        ]
-        non_index_covariates = [
-            (n, i) for n, i in covariate_items if not i.get("is_index_array")
-        ]
+        index_covariates = [(n, i) for n, i in covariate_items if i.get("is_index_array")]
+        non_index_covariates = [(n, i) for n, i in covariate_items if not i.get("is_index_array")]
 
         # Match index covariates to index variables from source
         # If only one index covariate and one index variable, match them directly
@@ -359,9 +341,7 @@ class RustModelExporter:
                 f"(integer indices, {n_groups} groups, cast to `usize` for indexing)"
             )
         else:
-            for (cov_name, cov_info), src_var in zip(
-                index_covariates, sorted(index_vars)
-            ):
+            for (cov_name, cov_info), src_var in zip(index_covariates, sorted(index_vars)):
                 n_groups = cov_info.get("n_groups", 0)
                 hints.append(
                     f"`{src_var}` in source → `{cov_name.upper()}_DATA` "
@@ -376,9 +356,7 @@ class RustModelExporter:
         arith_vars -= {"observed", "shape"}
         remaining_src_vars = sorted(arith_vars)
 
-        for (cov_name, cov_info), src_var in zip(
-            non_index_covariates, remaining_src_vars
-        ):
+        for (cov_name, cov_info), src_var in zip(non_index_covariates, remaining_src_vars):
             hints.append(f"`{src_var}` in source → `{cov_name.upper()}_DATA`")
 
         # Observed data mapping
@@ -387,9 +365,7 @@ class RustModelExporter:
             obs_match = _re.search(r"(\w+)\s*~.*observed", source)
             if obs_match:
                 src_obs = obs_match.group(1)
-                hints.append(
-                    f"`{src_obs}` (observed) in source → `{obs_name.upper()}_DATA`"
-                )
+                hints.append(f"`{src_obs}` (observed) in source → `{obs_name.upper()}_DATA`")
 
         return hints
 
@@ -536,10 +512,7 @@ class RustModelExporter:
                     label = f"INTEGER INDEX ARRAY (values 0..{n_groups - 1}, {n_groups} groups) — cast to usize for array indexing"
                 else:
                     label = "covariate/predictor"
-                parts.append(
-                    f"- `{rust_name}_DATA: &[f64]` — {label}, n={n}, "
-                    f"range={range_str}, mean={mean_str}"
-                )
+                parts.append(f"- `{rust_name}_DATA: &[f64]` — {label}, n={n}, range={range_str}, mean={mean_str}")
                 parts.append(f"  `{rust_name}_N: usize = {n}`")
 
             # Try to add source-to-data mapping hints
@@ -552,13 +525,9 @@ class RustModelExporter:
                         parts.append(f"- {hint}")
             parts.append("")
 
-        parts.append(
-            f"## Optimized PyTensor Graph (logp)\n```\n{ctx.logp_graph}\n```\n"
-        )
+        parts.append(f"## Optimized PyTensor Graph (logp)\n```\n{ctx.logp_graph}\n```\n")
 
-        parts.append(
-            f"## Optimized PyTensor Graph (dlogp/gradient)\n```\n{ctx.dlogp_graph}\n```\n"
-        )
+        parts.append(f"## Optimized PyTensor Graph (dlogp/gradient)\n```\n{ctx.dlogp_graph}\n```\n")
 
         parts.append("## Individual logp terms (optimized, per RV)\n")
         for name, term in ctx.logp_terms.items():
@@ -566,9 +535,7 @@ class RustModelExporter:
             parts.append(f"### {name}\n```\n{display}\n```\n")
 
         parts.append("## Validation")
-        parts.append(
-            "Your generated code MUST produce these exact values (within float64 precision):\n"
-        )
+        parts.append("Your generated code MUST produce these exact values (within float64 precision):\n")
 
         parts.append(f"At initial point: {json.dumps(ctx.initial_point.point)}")
         parts.append(f"- logp = {ctx.initial_point.logp:.10f}")
@@ -639,9 +606,7 @@ mod tests {
         assert_close(logp, {vp.logp:.10f}, 1e-6, "logp");""")
 
             for i, g in enumerate(vp.dlogp):
-                tests.append(
-                    f'        assert_close(gradient[{i}], {g:.10e}, 1e-4, "grad[{i}]");'
-                )
+                tests.append(f'        assert_close(gradient[{i}], {g:.10e}, 1e-4, "grad[{i}]");')
             tests.append("    }\n")
 
         tests.append("}\n")
@@ -676,9 +641,7 @@ def export_model(
         exporter = export_model(model)
         prompt = exporter.to_prompt()
     """
-    exporter = RustModelExporter(
-        model, source_code=source_code, n_extra_points=n_extra_points
-    )
+    exporter = RustModelExporter(model, source_code=source_code, n_extra_points=n_extra_points)
     if output_dir:
         exporter.save_all(output_dir)
     return exporter

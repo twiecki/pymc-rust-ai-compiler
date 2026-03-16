@@ -6,7 +6,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-
 from transpailer.compiler import (
     CompilationResult,
     _AgentState,
@@ -19,7 +18,6 @@ from transpailer.compiler import (
 from transpailer.exporter import (
     RustModelExporter,
 )
-
 
 # ---------------------------------------------------------------------------
 # CompilationResult
@@ -379,9 +377,7 @@ class TestExecuteTool:
                 messages=[],
             )
 
-            result = _execute_tool(
-                "write_rust_code", {"code": "// test"}, state, verbose=False
-            )
+            result = _execute_tool("write_rust_code", {"code": "// test"}, state, verbose=False)
             assert "Written" in result
 
     def test_dispatches_read(self):
@@ -395,9 +391,7 @@ class TestExecuteTool:
                 messages=[],
             )
 
-            result = _execute_tool(
-                "read_file", {"path": "test.rs"}, state, verbose=False
-            )
+            result = _execute_tool("read_file", {"path": "test.rs"}, state, verbose=False)
             assert "// hello" in result
 
 

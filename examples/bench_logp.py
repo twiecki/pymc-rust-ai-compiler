@@ -107,32 +107,24 @@ def main():
         pt_result = benchmark_logp_pytensor(model, n_evals=n_evals, x0_model_order=x0)
         print(f"    pytensor (python loop): {pt_result['us_per_eval']:.2f} us/eval")
 
-        cfunc_result = benchmark_logp_numba_cfunc(
-            model, n_evals=n_evals, x0_model_order=x0
-        )
+        cfunc_result = benchmark_logp_numba_cfunc(model, n_evals=n_evals, x0_model_order=x0)
         print(f"    numba cfunc (rust loop): {cfunc_result['us_per_eval']:.2f} us/eval")
 
-        rs_result = benchmark_logp_rust(
-            build_dir, model, n_evals=n_evals, x0_model_order=x0
-        )
+        rs_result = benchmark_logp_rust(build_dir, model, n_evals=n_evals, x0_model_order=x0)
         if "error" in rs_result:
             print(f"    rust-ai: ERROR - {rs_result['error'][:100]}")
         else:
             print(f"    rust-ai:  {rs_result['us_per_eval']:.2f} us/eval")
 
         print_logp_comparison(pt_result, rs_result, model_name=name)
-        print_logp_comparison(
-            cfunc_result, rs_result, model_name=f"{name} [cfunc vs rust]"
-        )
+        print_logp_comparison(cfunc_result, rs_result, model_name=f"{name} [cfunc vs rust]")
         results.append((name, pt_result, cfunc_result, rs_result))
 
     # Summary table
     print("\n" + "=" * 85)
     print("SUMMARY: logp+dlogp evaluation speed")
     print("=" * 85)
-    print(
-        f"\n{'Model':<25} {'pytensor':<14} {'cfunc+rust':<14} {'rust-ai':<14} {'cfunc/rust':<12}"
-    )
+    print(f"\n{'Model':<25} {'pytensor':<14} {'cfunc+rust':<14} {'rust-ai':<14} {'cfunc/rust':<12}")
     print("-" * 79)
     for name, pt, cf, rs in results:
         pt_us = f"{pt['us_per_eval']:.2f} us" if "error" not in pt else "ERROR"

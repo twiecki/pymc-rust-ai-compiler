@@ -19,16 +19,7 @@ from torch.nn import functional as F
 
 class NewGELU(nn.Module):
     def forward(self, x):
-        return (
-            0.5
-            * x
-            * (
-                1.0
-                + torch.tanh(
-                    (2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))
-                )
-            )
-        )
+        return 0.5 * x * (1.0 + torch.tanh((2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))))
 
 
 class CausalSelfAttention(nn.Module):
@@ -38,9 +29,7 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(n_embd, n_embd)
         self.register_buffer(
             "bias",
-            torch.tril(torch.ones(block_size, block_size)).view(
-                1, 1, block_size, block_size
-            ),
+            torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size),
         )
         self.n_head = n_head
         self.n_embd = n_embd
@@ -90,9 +79,7 @@ class MinGPTCore(nn.Module):
         super().__init__()
         self.n_embd = n_embd
         self.seq_len = block_size  # fixed sequence length for transpilation
-        self.blocks = nn.ModuleList(
-            [TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)]
-        )
+        self.blocks = nn.ModuleList([TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
 
@@ -344,9 +331,7 @@ class MinGPTCore(nn.Module):
                 print(f"  PyTorch:  {pytorch_us:.1f} µs/call")
                 print(f"  Rust:     {rust_us:.1f} µs/call")
                 speedup = pytorch_us / rust_us
-                print(
-                    f"  Speedup:  {speedup:.1f}x {'faster' if speedup > 1 else 'slower'}"
-                )
+                print(f"  Speedup:  {speedup:.1f}x {'faster' if speedup > 1 else 'slower'}")
             else:
                 print("  Rust benchmark failed!")
         else:

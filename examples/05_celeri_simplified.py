@@ -138,9 +138,7 @@ with pm.Model() as model:
     slip_rate = pm.Normal("slip_rate", mu=0, sigma=slip_prior_sigma, shape=n_faults * 2)
 
     # Predicted GPS velocities via design matrices
-    predicted_velocity = pm.math.dot(G_rotation, rotation) + pm.math.dot(
-        G_slip, slip_rate
-    )
+    predicted_velocity = pm.math.dot(G_rotation, rotation) + pm.math.dot(G_slip, slip_rate)
 
     # GPS station velocity likelihood (StudentT for heavy tails)
     pm.StudentT(
@@ -208,8 +206,6 @@ if result.success:
     print(f"\nTrue rotation: {true_rotation}")
     print(f"True slip rates: {true_slip}")
 else:
-    print(
-        f"\nCompilation FAILED after {result.n_attempts} builds, {result.n_tool_calls} tool calls"
-    )
+    print(f"\nCompilation FAILED after {result.n_attempts} builds, {result.n_tool_calls} tool calls")
     for err in result.validation_errors[:5]:
         print(f"  - {err}")

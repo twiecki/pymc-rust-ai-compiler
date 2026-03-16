@@ -62,9 +62,7 @@ with pm.Model() as model:
     mu_y = a[group_idx] + b * x
     y = pm.Normal("y", mu=mu_y, sigma=sigma_y, observed=y_obs)
 
-print(
-    f"True: mu_a={true_mu_a}, sigma_a={true_sigma_a}, b={true_b}, sigma_y={true_sigma_y}"
-)
+print(f"True: mu_a={true_mu_a}, sigma_a={true_sigma_a}, b={true_b}, sigma_y={true_sigma_y}")
 print(f"Data: {n_groups} groups, {N} observations")
 print(f"Group sizes: {n_per_group}")
 print()

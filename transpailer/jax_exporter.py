@@ -57,18 +57,9 @@ class ModelContext:
         return {
             "source_framework": self.source_framework,
             "source_code": self.source_code,
-            "parameters": [
-                {"name": p.name, "shape": p.shape, "dtype": p.dtype, "size": p.size}
-                for p in self.params
-            ],
-            "inputs": [
-                {"name": i.name, "shape": i.shape, "dtype": i.dtype, "size": i.size}
-                for i in self.inputs
-            ],
-            "outputs": [
-                {"name": o.name, "shape": o.shape, "dtype": o.dtype, "size": o.size}
-                for o in self.outputs
-            ],
+            "parameters": [{"name": p.name, "shape": p.shape, "dtype": p.dtype, "size": p.size} for p in self.params],
+            "inputs": [{"name": i.name, "shape": i.shape, "dtype": i.dtype, "size": i.size} for i in self.inputs],
+            "outputs": [{"name": o.name, "shape": o.shape, "dtype": o.dtype, "size": o.size} for o in self.outputs],
             "validation_points": [
                 {
                     "params": vp.params,

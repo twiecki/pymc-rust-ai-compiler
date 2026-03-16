@@ -116,9 +116,7 @@ class TestPytorchExporter:
                 super().__init__()
                 self.fc = nn.Linear(2, 3)
                 with torch.no_grad():
-                    self.fc.weight.copy_(
-                        torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-                    )
+                    self.fc.weight.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
                     self.fc.bias.copy_(torch.tensor([0.1, 0.2, 0.3]))
 
             def forward(self, x):
@@ -159,6 +157,7 @@ class TestPytorchExporter:
 
     def test_forward_output_matches(self, simple_model):
         import torch
+
         from transpailer.pytorch_exporter import PytorchModelExporter
 
         model, x = simple_model
@@ -178,11 +177,11 @@ class TestTranspilerTools:
     """Test the transpiler's tool execution logic without API calls."""
 
     def test_write_code_syntax_check(self):
-        from transpailer.jax_pytorch_transpiler import (
-            _tool_write_code,
-            _AgentState,
-        )
         from transpailer.jax_exporter import ModelContext
+        from transpailer.jax_pytorch_transpiler import (
+            _AgentState,
+            _tool_write_code,
+        )
 
         state = _AgentState(
             direction="jax_to_pytorch",
@@ -200,18 +199,18 @@ class TestTranspilerTools:
         # Valid code
         result = _tool_write_code({"code": "x = 1 + 2"}, state, verbose=False)
         assert "Written" in result
-        assert state.generated_code == "x = 1 + 2"
+        assert state.generated_code.strip() == "x = 1 + 2"
 
         # Invalid code
         result = _tool_write_code({"code": "def f(:"}, state, verbose=False)
         assert "Syntax error" in result
 
     def test_validate_no_code(self):
-        from transpailer.jax_pytorch_transpiler import (
-            _tool_validate,
-            _AgentState,
-        )
         from transpailer.jax_exporter import ModelContext
+        from transpailer.jax_pytorch_transpiler import (
+            _AgentState,
+            _tool_validate,
+        )
 
         state = _AgentState(
             direction="jax_to_pytorch",
@@ -233,11 +232,12 @@ class TestTranspilerTools:
     def test_validate_pytorch_correct_model(self):
         """Test that validation passes for a correctly transpiled model."""
         import jax.numpy as jnp
+
         from transpailer.jax_exporter import JaxModelExporter
         from transpailer.jax_pytorch_transpiler import (
-            _tool_write_code,
-            _tool_validate,
             _AgentState,
+            _tool_validate,
+            _tool_write_code,
         )
 
         # Create a simple JAX model
@@ -288,12 +288,13 @@ def make_model(params):
         """Test that validation passes for a correctly transpiled JAX model."""
         import torch
         import torch.nn as nn
-        from transpailer.pytorch_exporter import PytorchModelExporter
+
         from transpailer.jax_pytorch_transpiler import (
-            _tool_write_code,
-            _tool_validate,
             _AgentState,
+            _tool_validate,
+            _tool_write_code,
         )
+        from transpailer.pytorch_exporter import PytorchModelExporter
 
         # Create a simple PyTorch model
         class Linear(nn.Module):

@@ -14,10 +14,10 @@ Usage:
 
 import os
 import sys
-import time
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,6 +33,7 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ---------------------------------------------------------------------------
 # Model factory functions
 # ---------------------------------------------------------------------------
+
 
 def make_normal_model():
     build_dir = Path("compiled_models/normal")
@@ -94,13 +95,14 @@ def make_gp_model():
 # Compile + Optimize
 # ---------------------------------------------------------------------------
 
+
 def run_compile_and_optimize(name, make_model_fn, source_code, build_dir):
     """Compile a PyMC model to Rust, then optimize it."""
     from transpailer import compile_model, optimize_model
     from transpailer.analysis import (
         plot_optimization_progress,
-        plot_waterfall,
         plot_timeline,
+        plot_waterfall,
         print_summary,
     )
 
@@ -163,6 +165,7 @@ def run_compile_and_optimize(name, make_model_fn, source_code, build_dir):
 # Benchmark comparison plot
 # ---------------------------------------------------------------------------
 
+
 def run_benchmarks_and_plot():
     """Run logp benchmarks on compiled models and generate comparison bar chart."""
     from transpailer.benchmark import (
@@ -174,7 +177,11 @@ def run_benchmarks_and_plot():
     models_info = [
         ("Normal\n(2 params)", make_normal_model, "compiled_models/normal"),
         ("LinReg\n(3 params)", make_linreg_model, "compiled_models/linreg"),
-        ("Hierarchical\n(12 params)", make_hierarchical_model, "compiled_models/hierarchical"),
+        (
+            "Hierarchical\n(12 params)",
+            make_hierarchical_model,
+            "compiled_models/hierarchical",
+        ),
         ("GP\n(3 params)", make_gp_model, "compiled_models/gp"),
     ]
 
@@ -226,10 +233,24 @@ def run_benchmarks_and_plot():
     width = 0.35
 
     # Bar chart: us/eval comparison
-    bars1 = ax1.bar(x - width / 2, pt_vals, width, label="PyTensor (Numba)",
-                    color="#3498db", edgecolor="#2c3e50", linewidth=0.5)
-    bars2 = ax1.bar(x + width / 2, rs_vals, width, label="AI-compiled Rust",
-                    color="#e74c3c", edgecolor="#2c3e50", linewidth=0.5)
+    bars1 = ax1.bar(
+        x - width / 2,
+        pt_vals,
+        width,
+        label="PyTensor (Numba)",
+        color="#3498db",
+        edgecolor="#2c3e50",
+        linewidth=0.5,
+    )
+    bars2 = ax1.bar(
+        x + width / 2,
+        rs_vals,
+        width,
+        label="AI-compiled Rust",
+        color="#e74c3c",
+        edgecolor="#2c3e50",
+        linewidth=0.5,
+    )
 
     ax1.set_ylabel("us/eval (lower is better)", fontsize=11)
     ax1.set_title("logp+gradient Evaluation Speed", fontsize=13, fontweight="bold")
@@ -239,12 +260,24 @@ def run_benchmarks_and_plot():
     ax1.grid(True, alpha=0.3, axis="y")
 
     for bar in bars1:
-        ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                 f"{bar.get_height():.1f}", ha="center", va="bottom", fontsize=8)
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height(),
+            f"{bar.get_height():.1f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
     for bar in bars2:
         if bar.get_height() > 0:
-            ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                     f"{bar.get_height():.2f}", ha="center", va="bottom", fontsize=8)
+            ax1.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                f"{bar.get_height():.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
 
     # Speedup chart
     colors = ["#2ecc71" if s >= 3 else "#f39c12" if s >= 2 else "#e74c3c" for s in speedups]
@@ -258,18 +291,26 @@ def run_benchmarks_and_plot():
 
     for bar, s in zip(bars3, speedups):
         if s > 0:
-            ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                     f"{s:.1f}x", ha="center", va="bottom", fontsize=10, fontweight="bold")
+            ax2.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height(),
+                f"{s:.1f}x",
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                fontweight="bold",
+            )
 
     fig.tight_layout()
     fig.savefig(OUTPUT_DIR / "benchmark_comparison.png", dpi=150)
     plt.close(fig)
-    print(f"\nSaved: benchmark_comparison.png")
+    print("\nSaved: benchmark_comparison.png")
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main():
     os.chdir(Path(__file__).parent.parent)

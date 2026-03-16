@@ -37,3 +37,10 @@ dev = [
     "pytest>=9.0.2",
     "ruff>=0.15",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]

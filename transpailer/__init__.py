@@ -8,53 +8,54 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-# JAX ↔ PyTorch (no heavy deps at import time)
-from transpailer.jax_pytorch_transpiler import (
-    transpile_jax_to_pytorch,
-    transpile_pytorch_to_jax,
-    TranspileResult,
-)
 from transpailer.jax_exporter import (
     JaxModelExporter,
     export_jax_model,
+)
+
+# JAX ↔ PyTorch (no heavy deps at import time)
+from transpailer.jax_pytorch_transpiler import (
+    TranspileResult,
+    transpile_jax_to_pytorch,
+    transpile_pytorch_to_jax,
 )
 from transpailer.pytorch_exporter import (
     PytorchModelExporter,
     export_pytorch_model,
 )
 from transpailer.pytorch_rust_transpiler import (
-    transpile_pytorch_to_rust,
     RustTranspileResult,
+    transpile_pytorch_to_rust,
 )
 
 # PyMC/Stan imports are lazy — they pull in heavy deps (pymc, bridgestan)
 if TYPE_CHECKING:
+    from transpailer.analysis import (
+        plot_optimization_progress,
+        plot_timeline,
+        plot_waterfall,
+        print_summary,
+    )
+    from transpailer.compiler import (
+        OptimizationEvent,
+        compile_model,
+        optimize_model,
+    )
     from transpailer.exporter import (
         ModelContext,
         RustModelExporter,
         export_model,
     )
-    from transpailer.compiler import (
-        compile_model,
-        optimize_model,
-        OptimizationEvent,
-    )
-    from transpailer.analysis import (
-        plot_optimization_progress,
-        plot_waterfall,
-        plot_timeline,
-        print_summary,
+    from transpailer.stan_compiler import (
+        StanCompilationResult,
+        compile_stan_model,
     )
     from transpailer.stan_exporter import (
         StanModelContext,
         StanModelExporter,
         export_stan_model,
     )
-    from transpailer.stan_compiler import (
-        compile_stan_model,
-        StanCompilationResult,
-    )
-    from transpailer.stan_to_pymc import transpile_stan_to_pymc, StanToPyMCResult
+    from transpailer.stan_to_pymc import StanToPyMCResult, transpile_stan_to_pymc
 
 
 def __getattr__(name: str):

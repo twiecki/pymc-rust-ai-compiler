@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+from transpailer.formatting import format_python_code as _format_python
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
@@ -95,8 +96,7 @@ TOOLS = [
                 "code": {
                     "type": "string",
                     "description": (
-                        "Complete Python source code defining make_model(data). "
-                        "Must include all necessary imports."
+                        "Complete Python source code defining make_model(data). Must include all necessary imports."
                     ),
                 },
             },
@@ -118,8 +118,7 @@ TOOLS = [
     {
         "name": "read_stan_code",
         "description": (
-            "Re-read the original Stan source code. Useful if you need to "
-            "double-check details of the Stan model."
+            "Re-read the original Stan source code. Useful if you need to double-check details of the Stan model."
         ),
         "input_schema": {
             "type": "object",
@@ -313,10 +312,7 @@ def transpile_stan_to_pymc(
         reference_points.append({"point": pt.point, "logp": pt.logp, "dlogp": pt.dlogp})
 
     if verbose:
-        print(
-            f"  {ctx.n_params} unconstrained params, "
-            f"{len(reference_points)} validation points"
-        )
+        print(f"  {ctx.n_params} unconstrained params, {len(reference_points)} validation points")
 
     # Step 2: Build prompts
     system_prompt = _build_system_prompt()
@@ -361,11 +357,7 @@ def transpile_stan_to_pymc(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(
-                    f"  Turn {turn}: "
-                    f"{response.usage.input_tokens} in / "
-                    f"{response.usage.output_tokens} out tokens"
-                )
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
 
         if response.stop_reason == "end_turn":
             if verbose:
@@ -407,9 +399,7 @@ def transpile_stan_to_pymc(
 
     validation_errors = []
     if not state.validated:
-        validation_errors.append(
-            f"Agent did not achieve validation after {state.tool_calls} tool calls"
-        )
+        validation_errors.append(f"Agent did not achieve validation after {state.tool_calls} tool calls")
 
     return StanToPyMCResult(
         pymc_code=state.pymc_code,
@@ -461,6 +451,7 @@ def _tool_write_pymc_code(
             print(f"  [write_pymc_code] Syntax error: {e}")
         return f"Syntax error in generated code: {e}"
 
+    code = _format_python(code)
     state.pymc_code = code
     if verbose:
         print(f"  [write_pymc_code] Wrote {len(code)} chars")
@@ -507,9 +498,7 @@ def _tool_validate_model(state: _AgentState, verbose: bool) -> str:
     # per parameter for proper normalization. This constant offset doesn't affect
     # sampling but causes logp comparison mismatches.
     _HALF_RV_OPS = {"HalfNormalRV", "HalfCauchyRV", "HalfStudentTRV", "HalfFlatRV"}
-    n_half = sum(
-        1 for rv in model.free_RVs if type(rv.owner.op).__name__ in _HALF_RV_OPS
-    )
+    n_half = sum(1 for rv in model.free_RVs if type(rv.owner.op).__name__ in _HALF_RV_OPS)
     half_logp_correction = n_half * np.log(2)
     if verbose and n_half > 0:
         print(
@@ -693,16 +682,10 @@ def _map_unc_point_to_pymc(
     for var in pymc_vars:
         var_name = var.name
         # Strip PyMC transform suffixes
-        base_name = re.sub(
-            r"_(log|logodds|interval|circular|ordered|simplex)__$", "", var_name
-        )
+        base_name = re.sub(r"_(log|logodds|interval|circular|ordered|simplex)__$", "", var_name)
 
         # Determine size of this variable
-        var_size = int(
-            np.prod(var.type.shape)
-            if hasattr(var.type, "shape") and var.type.shape
-            else 1
-        )
+        var_size = int(np.prod(var.type.shape) if hasattr(var.type, "shape") and var.type.shape else 1)
 
         # Find matching Stan param group
         matched = False

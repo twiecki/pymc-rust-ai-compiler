@@ -22,25 +22,14 @@ def parse_data_rs(path):
         name = m.group(1)
         if name.endswith("_SHAPE"):
             continue
-        vals = [
-            float(x.strip().rstrip(",")) for x in m.group(2).split(",") if x.strip()
-        ]
+        vals = [float(x.strip().rstrip(",")) for x in m.group(2).split(",") if x.strip()]
         weights[name] = np.array(vals, dtype=np.float32)
     return weights
 
 
 class NewGELU(nn.Module):
     def forward(self, x):
-        return (
-            0.5
-            * x
-            * (
-                1.0
-                + torch.tanh(
-                    (2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))
-                )
-            )
-        )
+        return 0.5 * x * (1.0 + torch.tanh((2.0 / 3.141592653589793) ** 0.5 * (x + 0.044715 * x.pow(3.0))))
 
 
 class CausalSelfAttention(nn.Module):
@@ -50,9 +39,7 @@ class CausalSelfAttention(nn.Module):
         self.c_proj = nn.Linear(n_embd, n_embd)
         self.register_buffer(
             "bias",
-            torch.tril(torch.ones(block_size, block_size)).view(
-                1, 1, block_size, block_size
-            ),
+            torch.tril(torch.ones(block_size, block_size)).view(1, 1, block_size, block_size),
         )
         self.n_head = n_head
         self.n_embd = n_embd
@@ -93,9 +80,7 @@ class MinGPTCore(nn.Module):
         super().__init__()
         self.n_embd = n_embd
         self.seq_len = block_size
-        self.blocks = nn.ModuleList(
-            [TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)]
-        )
+        self.blocks = nn.ModuleList([TransformerBlock(n_embd, n_head, block_size) for _ in range(n_layer)])
         self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size, bias=False)
 
@@ -116,30 +101,20 @@ def load_weights_from_data_rs(model, weights):
             prefix = f"BLOCKS_{i}_"
             b.ln_1.weight.copy_(torch.tensor(weights[f"{prefix}LN_1_WEIGHT"]))
             b.ln_1.bias.copy_(torch.tensor(weights[f"{prefix}LN_1_BIAS"]))
-            b.attn.c_attn.weight.copy_(
-                torch.tensor(weights[f"{prefix}ATTN_C_ATTN_WEIGHT"]).reshape(144, 48)
-            )
+            b.attn.c_attn.weight.copy_(torch.tensor(weights[f"{prefix}ATTN_C_ATTN_WEIGHT"]).reshape(144, 48))
             b.attn.c_attn.bias.copy_(torch.tensor(weights[f"{prefix}ATTN_C_ATTN_BIAS"]))
-            b.attn.c_proj.weight.copy_(
-                torch.tensor(weights[f"{prefix}ATTN_C_PROJ_WEIGHT"]).reshape(48, 48)
-            )
+            b.attn.c_proj.weight.copy_(torch.tensor(weights[f"{prefix}ATTN_C_PROJ_WEIGHT"]).reshape(48, 48))
             b.attn.c_proj.bias.copy_(torch.tensor(weights[f"{prefix}ATTN_C_PROJ_BIAS"]))
             b.ln_2.weight.copy_(torch.tensor(weights[f"{prefix}LN_2_WEIGHT"]))
             b.ln_2.bias.copy_(torch.tensor(weights[f"{prefix}LN_2_BIAS"]))
-            b.c_fc.weight.copy_(
-                torch.tensor(weights[f"{prefix}C_FC_WEIGHT"]).reshape(192, 48)
-            )
+            b.c_fc.weight.copy_(torch.tensor(weights[f"{prefix}C_FC_WEIGHT"]).reshape(192, 48))
             b.c_fc.bias.copy_(torch.tensor(weights[f"{prefix}C_FC_BIAS"]))
-            b.c_proj.weight.copy_(
-                torch.tensor(weights[f"{prefix}C_PROJ_WEIGHT"]).reshape(48, 192)
-            )
+            b.c_proj.weight.copy_(torch.tensor(weights[f"{prefix}C_PROJ_WEIGHT"]).reshape(48, 192))
             b.c_proj.bias.copy_(torch.tensor(weights[f"{prefix}C_PROJ_BIAS"]))
 
         model.ln_f.weight.copy_(torch.tensor(weights["LN_F_WEIGHT"]))
         model.ln_f.bias.copy_(torch.tensor(weights["LN_F_BIAS"]))
-        model.lm_head.weight.copy_(
-            torch.tensor(weights["LM_HEAD_WEIGHT"]).reshape(32, 48)
-        )
+        model.lm_head.weight.copy_(torch.tensor(weights["LM_HEAD_WEIGHT"]).reshape(32, 48))
 
 
 def main():
@@ -194,9 +169,7 @@ def main():
     ]
 
     print("\n--- Enzyme vs PyTorch comparison (first 10) ---")
-    print(
-        f"{'idx':>4} {'Enzyme':>14} {'PyTorch':>14} {'abs_diff':>12} {'rel_diff':>12}"
-    )
+    print(f"{'idx':>4} {'Enzyme':>14} {'PyTorch':>14} {'abs_diff':>12} {'rel_diff':>12}")
     for i in range(10):
         e = enzyme_grads[i]
         p = grad[i]

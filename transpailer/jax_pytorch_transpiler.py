@@ -18,8 +18,8 @@ from typing import Any, Callable
 
 import numpy as np
 
+from transpailer.formatting import format_python_code as _format_python
 from transpailer.jax_exporter import ModelContext
-
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
@@ -164,9 +164,7 @@ TOOLS = [
     },
     {
         "name": "read_source",
-        "description": (
-            "Re-read the original source code of the model being transpiled."
-        ),
+        "description": ("Re-read the original source code of the model being transpiled."),
         "input_schema": {
             "type": "object",
             "properties": {},
@@ -325,8 +323,7 @@ def _build_user_prompt(ctx: ModelContext, direction: str) -> str:
             parts.append(f"  expected output = {vp.output}")
         else:
             parts.append(
-                f"  expected output: shape={list(out_arr.shape)}, "
-                f"mean={out_arr.mean():.6f}, std={out_arr.std():.6f}"
+                f"  expected output: shape={list(out_arr.shape)}, mean={out_arr.mean():.6f}, std={out_arr.std():.6f}"
             )
 
         # Show expected gradients (truncated)
@@ -341,10 +338,7 @@ def _build_user_prompt(ctx: ModelContext, direction: str) -> str:
                 )
         parts.append("")
 
-    parts.append(
-        f"Generate the {target} code using `write_code`, "
-        f"then call `validate_model` to check correctness."
-    )
+    parts.append(f"Generate the {target} code using `write_code`, then call `validate_model` to check correctness.")
 
     return "\n".join(parts)
 
@@ -384,6 +378,7 @@ def _tool_write_code(
             print(f"  [write_code] Syntax error: {e}")
         return f"Syntax error in generated code: {e}"
 
+    code = _format_python(code)
     state.generated_code = code
     if verbose:
         print(f"  [write_code] Wrote {len(code)} chars")
@@ -444,10 +439,7 @@ def _validate_pytorch(namespace: dict, state: _AgentState, verbose: bool) -> str
                 x = torch.tensor(np.array(inp["x"]), dtype=torch.float32)
                 output = model(x)
             else:
-                tensors = {
-                    k: torch.tensor(np.array(v), dtype=torch.float32)
-                    for k, v in inp.items()
-                }
+                tensors = {k: torch.tensor(np.array(v), dtype=torch.float32) for k, v in inp.items()}
                 output = model(**tensors)
 
             out_np = output.detach().cpu().numpy()
@@ -455,28 +447,19 @@ def _validate_pytorch(namespace: dict, state: _AgentState, verbose: bool) -> str
 
             # Check output
             if out_np.shape != ref_out.shape:
-                errors.append(
-                    f"{label}: shape mismatch: got {out_np.shape}, expected {ref_out.shape}"
-                )
-                report_lines.append(
-                    f"{label}: SHAPE MISMATCH {out_np.shape} vs {ref_out.shape}"
-                )
+                errors.append(f"{label}: shape mismatch: got {out_np.shape}, expected {ref_out.shape}")
+                report_lines.append(f"{label}: SHAPE MISMATCH {out_np.shape} vs {ref_out.shape}")
                 continue
 
             max_diff = float(np.max(np.abs(out_np - ref_out)))
-            rel_err = float(
-                np.max(np.abs(out_np - ref_out) / np.maximum(np.abs(ref_out), 1e-8))
-            )
+            rel_err = float(np.max(np.abs(out_np - ref_out) / np.maximum(np.abs(ref_out), 1e-8)))
             out_ok = rel_err <= 1e-4
 
             report_lines.append(
-                f"{label}: output max_diff={max_diff:.2e} rel_err={rel_err:.2e} "
-                f"[{'OK' if out_ok else 'MISMATCH'}]"
+                f"{label}: output max_diff={max_diff:.2e} rel_err={rel_err:.2e} [{'OK' if out_ok else 'MISMATCH'}]"
             )
             if not out_ok:
-                errors.append(
-                    f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}"
-                )
+                errors.append(f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}")
 
             # Check gradients
             loss = output.sum()
@@ -489,20 +472,14 @@ def _validate_pytorch(namespace: dict, state: _AgentState, verbose: bool) -> str
                     if name == pname and param.grad is not None:
                         got_g = param.grad.detach().cpu().numpy()
                         grad_diff = float(np.max(np.abs(got_g - ref_g)))
-                        grad_rel = float(
-                            np.max(
-                                np.abs(got_g - ref_g) / np.maximum(np.abs(ref_g), 1e-8)
-                            )
-                        )
+                        grad_rel = float(np.max(np.abs(got_g - ref_g) / np.maximum(np.abs(ref_g), 1e-8)))
                         grad_ok = grad_rel <= 1e-3
                         report_lines.append(
                             f"  grad['{name}']: max_diff={grad_diff:.2e} rel_err={grad_rel:.2e} "
                             f"[{'OK' if grad_ok else 'MISMATCH'}]"
                         )
                         if not grad_ok:
-                            errors.append(
-                                f"{label}: grad['{name}'] mismatch: rel_err={grad_rel:.2e}"
-                            )
+                            errors.append(f"{label}: grad['{name}'] mismatch: rel_err={grad_rel:.2e}")
                         found = True
                         break
                 if not found:
@@ -522,9 +499,8 @@ def _validate_pytorch(namespace: dict, state: _AgentState, verbose: bool) -> str
     else:
         if verbose:
             print(f"  [validate] FAILED ({len(errors)} errors)")
-        return (
-            f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\n"
-            f"Errors:\n" + "\n".join(f"- {e}" for e in errors)
+        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(
+            f"- {e}" for e in errors
         )
 
 
@@ -536,9 +512,7 @@ def _validate_jax(namespace: dict, state: _AgentState, verbose: bool) -> str:
     if "forward" not in namespace:
         return "Error: generated code does not define `forward(params, x)` function."
     if "init_params" not in namespace:
-        return (
-            "Error: generated code does not define `init_params(param_data)` function."
-        )
+        return "Error: generated code does not define `init_params(param_data)` function."
 
     forward_fn = namespace["forward"]
     init_fn = namespace["init_params"]
@@ -575,28 +549,19 @@ def _validate_jax(namespace: dict, state: _AgentState, verbose: bool) -> str:
             ref_out = np.array(vp.output)
 
             if out_np.shape != ref_out.shape:
-                errors.append(
-                    f"{label}: shape mismatch: got {out_np.shape}, expected {ref_out.shape}"
-                )
-                report_lines.append(
-                    f"{label}: SHAPE MISMATCH {out_np.shape} vs {ref_out.shape}"
-                )
+                errors.append(f"{label}: shape mismatch: got {out_np.shape}, expected {ref_out.shape}")
+                report_lines.append(f"{label}: SHAPE MISMATCH {out_np.shape} vs {ref_out.shape}")
                 continue
 
             max_diff = float(np.max(np.abs(out_np - ref_out)))
-            rel_err = float(
-                np.max(np.abs(out_np - ref_out) / np.maximum(np.abs(ref_out), 1e-8))
-            )
+            rel_err = float(np.max(np.abs(out_np - ref_out) / np.maximum(np.abs(ref_out), 1e-8)))
             out_ok = rel_err <= 1e-4
 
             report_lines.append(
-                f"{label}: output max_diff={max_diff:.2e} rel_err={rel_err:.2e} "
-                f"[{'OK' if out_ok else 'MISMATCH'}]"
+                f"{label}: output max_diff={max_diff:.2e} rel_err={rel_err:.2e} [{'OK' if out_ok else 'MISMATCH'}]"
             )
             if not out_ok:
-                errors.append(
-                    f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}"
-                )
+                errors.append(f"{label}: output mismatch: max_diff={max_diff:.2e}, rel_err={rel_err:.2e}")
 
             # Check gradients
             grads = grad_fn(params, x)
@@ -606,18 +571,14 @@ def _validate_jax(namespace: dict, state: _AgentState, verbose: bool) -> str:
                 if pname in grads:
                     got_g = np.asarray(grads[pname])
                     grad_diff = float(np.max(np.abs(got_g - ref_g)))
-                    grad_rel = float(
-                        np.max(np.abs(got_g - ref_g) / np.maximum(np.abs(ref_g), 1e-8))
-                    )
+                    grad_rel = float(np.max(np.abs(got_g - ref_g) / np.maximum(np.abs(ref_g), 1e-8)))
                     grad_ok = grad_rel <= 1e-3
                     report_lines.append(
                         f"  grad['{pname}']: max_diff={grad_diff:.2e} rel_err={grad_rel:.2e} "
                         f"[{'OK' if grad_ok else 'MISMATCH'}]"
                     )
                     if not grad_ok:
-                        errors.append(
-                            f"{label}: grad['{pname}'] mismatch: rel_err={grad_rel:.2e}"
-                        )
+                        errors.append(f"{label}: grad['{pname}'] mismatch: rel_err={grad_rel:.2e}")
                 else:
                     errors.append(f"{label}: gradient for '{pname}' not found")
 
@@ -635,9 +596,8 @@ def _validate_jax(namespace: dict, state: _AgentState, verbose: bool) -> str:
     else:
         if verbose:
             print(f"  [validate] FAILED ({len(errors)} errors)")
-        return (
-            f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\n"
-            f"Errors:\n" + "\n".join(f"- {e}" for e in errors)
+        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(
+            f"- {e}" for e in errors
         )
 
 
@@ -683,11 +643,7 @@ def _run_agent_loop(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(
-                    f"  Turn {turn}: "
-                    f"{response.usage.input_tokens} in / "
-                    f"{response.usage.output_tokens} out tokens"
-                )
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
 
         if response.stop_reason == "end_turn":
             if verbose:
@@ -785,9 +741,7 @@ def transpile_jax_to_pytorch(
 
     if verbose:
         n_params = sum(p.size for p in ctx.params)
-        print(
-            f"  {n_params} parameters, {len(ctx.validation_points)} validation points"
-        )
+        print(f"  {n_params} parameters, {len(ctx.validation_points)} validation points")
 
     # Step 2: Build prompts and run agent
     system_prompt = _build_system_prompt("jax_to_pytorch")
@@ -815,9 +769,7 @@ def transpile_jax_to_pytorch(
 
     validation_errors = []
     if not state.validated:
-        validation_errors.append(
-            f"Agent did not achieve validation after {state.tool_calls} tool calls"
-        )
+        validation_errors.append(f"Agent did not achieve validation after {state.tool_calls} tool calls")
 
     return TranspileResult(
         source_framework="jax",
@@ -881,9 +833,7 @@ def transpile_pytorch_to_jax(
 
     if verbose:
         n_params = sum(p.size for p in ctx.params)
-        print(
-            f"  {n_params} parameters, {len(ctx.validation_points)} validation points"
-        )
+        print(f"  {n_params} parameters, {len(ctx.validation_points)} validation points")
 
     # Step 2: Build prompts and run agent
     system_prompt = _build_system_prompt("pytorch_to_jax")
@@ -911,9 +861,7 @@ def transpile_pytorch_to_jax(
 
     validation_errors = []
     if not state.validated:
-        validation_errors.append(
-            f"Agent did not achieve validation after {state.tool_calls} tool calls"
-        )
+        validation_errors.append(f"Agent did not achieve validation after {state.tool_calls} tool calls")
 
     return TranspileResult(
         source_framework="pytorch",

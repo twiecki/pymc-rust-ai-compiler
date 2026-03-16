@@ -260,8 +260,7 @@ TOOLS = [
     {
         "name": "cargo_build",
         "description": (
-            "Build the Rust project with `cargo build --release`. "
-            "Returns build output including any compiler errors."
+            "Build the Rust project with `cargo build --release`. Returns build output including any compiler errors."
         ),
         "input_schema": {
             "type": "object",
@@ -375,16 +374,12 @@ def _detect_skills(
             has_gp = True
             break
     # Also check the logp graph text for GP indicators
-    if not has_gp and any(
-        kw in ctx.logp_graph.lower() for kw in ["cholesky", "mvnormal", "gp_"]
-    ):
+    if not has_gp and any(kw in ctx.logp_graph.lower() for kw in ["cholesky", "mvnormal", "gp_"]):
         has_gp = True
 
     if has_gp:
         cuda = use_cuda if use_cuda is not None else _cuda_available()
-        accelerate = (
-            use_accelerate if use_accelerate is not None else _accelerate_available()
-        )
+        accelerate = use_accelerate if use_accelerate is not None else _accelerate_available()
         if cuda:
             skills.append("gp_cuda")
         elif accelerate:
@@ -679,9 +674,7 @@ def compile_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(
-                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
-                )
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
 
         # Check stop reason
         if response.stop_reason == "end_turn":
@@ -730,9 +723,7 @@ def compile_model(
 
     validation_errors = []
     if not state.validated:
-        validation_errors.append(
-            f"Agent did not achieve validation after {state.tool_calls} tool calls"
-        )
+        validation_errors.append(f"Agent did not achieve validation after {state.tool_calls} tool calls")
 
     result = CompilationResult(
         rust_code=rust_code,
@@ -760,9 +751,7 @@ def compile_model(
     return result
 
 
-def _execute_tool(
-    name: str, input_data: dict, state: _AgentState, verbose: bool
-) -> str:
+def _execute_tool(name: str, input_data: dict, state: _AgentState, verbose: bool) -> str:
     """Execute a tool and return the result string."""
     if name == "write_rust_code":
         return _tool_write_rust_code(input_data, state, verbose)
@@ -792,14 +781,9 @@ def _tool_write_rust_code(input_data: dict, state: _AgentState, verbose: bool) -
         _setup_enzyme_toolchain(state.build_path)
         # Move feature flag to lib.rs (crate root) if agent put it in generated.rs
         if "#![feature(autodiff)]" in code:
-            code_clean = code.replace("#![feature(autodiff)]\n", "").replace(
-                "#![feature(autodiff)]", ""
-            )
+            code_clean = code.replace("#![feature(autodiff)]\n", "").replace("#![feature(autodiff)]", "")
             gen_path.write_text(code_clean)
-        lib_rs = (
-            "#![feature(autodiff)]\n"
-            "pub mod data;\npub mod generated;\npub use generated::*;\n"
-        )
+        lib_rs = "#![feature(autodiff)]\npub mod data;\npub mod generated;\npub use generated::*;\n"
         (state.build_path / "src" / "lib.rs").write_text(lib_rs)
 
     if verbose:
@@ -884,9 +868,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     if not binary.exists():
         return "Error: validation binary not found. Run cargo_build first."
 
-    all_points = [("initial", ctx.initial_point)] + [
-        (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
-    ]
+    all_points = [("initial", ctx.initial_point)] + [(f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)]
 
     input_lines = []
     for name, vp in all_points:
@@ -915,9 +897,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     output_lines = [line for line in result.stdout.strip().split("\n") if line]
 
     if len(output_lines) != len(all_points):
-        return (
-            f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
-        )
+        return f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
 
     # Parse results
     parsed = []
@@ -955,21 +935,17 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
 
         # logp comparison
         if has_constant_offset:
-            adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(
-                abs(vp.logp), 1.0
-            )
+            adjusted_err = abs((rust_logp - mean_offset) - vp.logp) / max(abs(vp.logp), 1.0)
         else:
             adjusted_err = abs(rust_logp - vp.logp) / max(abs(vp.logp), 1.0)
 
         status = "OK" if adjusted_err <= 1e-4 else "MISMATCH"
         report_lines.append(
-            f"{name}: logp PyMC={vp.logp:.10f} Rust={rust_logp:.10f} "
-            f"rel_err={adjusted_err:.2e} [{status}]"
+            f"{name}: logp PyMC={vp.logp:.10f} Rust={rust_logp:.10f} rel_err={adjusted_err:.2e} [{status}]"
         )
         if adjusted_err > 1e-4:
             errors.append(
-                f"{name}: logp mismatch: PyMC={vp.logp:.10f}, Rust={rust_logp:.10f}, "
-                f"rel_err={adjusted_err:.2e}"
+                f"{name}: logp mismatch: PyMC={vp.logp:.10f}, Rust={rust_logp:.10f}, rel_err={adjusted_err:.2e}"
             )
 
         # Per-RV logp decomposition (only for initial point)
@@ -986,8 +962,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
                 grad_errors += 1
                 if grad_errors <= 5:  # Show first 5
                     errors.append(
-                        f"{name}: gradient[{j}] mismatch: PyMC={pymc_g:.6e}, "
-                        f"Rust={rust_g:.6e}, rel_err={grad_err:.2e}"
+                        f"{name}: gradient[{j}] mismatch: PyMC={pymc_g:.6e}, Rust={rust_g:.6e}, rel_err={grad_err:.2e}"
                     )
         if grad_errors > 0:
             report_lines.append(f"  {grad_errors} gradient mismatches")
@@ -1024,10 +999,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
                 code_hash=_code_hash(state.build_path),
             )
         )
-        return (
-            f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n"
-            + "\n".join(errors)
-        )
+        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(errors)
 
 
 def _tool_read_file(input_data: dict, state: _AgentState, verbose: bool) -> str:
@@ -1061,9 +1033,7 @@ def _tool_read_file(input_data: dict, state: _AgentState, verbose: bool) -> str:
     return content
 
 
-def _tool_add_cargo_dependency(
-    input_data: dict, state: _AgentState, verbose: bool
-) -> str:
+def _tool_add_cargo_dependency(input_data: dict, state: _AgentState, verbose: bool) -> str:
     """Add a crate dependency to Cargo.toml."""
     name = input_data.get("name", "")
     version = input_data.get("version", "")
@@ -1147,9 +1117,7 @@ def _generate_data_rs(ctx) -> str:
 
             # Format with full f64 precision
             formatted_values = ", ".join(f"{v:.17e}" for v in flat)
-            lines.append(
-                f"pub const {name.upper()}_DATA: &[f64] = &[{formatted_values}];\n"
-            )
+            lines.append(f"pub const {name.upper()}_DATA: &[f64] = &[{formatted_values}];\n")
 
     return "\n".join(lines)
 
@@ -1228,9 +1196,7 @@ path = "src/bench.rs"
     (src_dir / "lib.rs").write_text(lib_rs)
 
     # Placeholder generated.rs so the project structure is valid
-    (src_dir / "generated.rs").write_text(
-        "// Placeholder — will be overwritten by the agent\n"
-    )
+    (src_dir / "generated.rs").write_text("// Placeholder — will be overwritten by the agent\n")
 
     # Validation binary
     validate_rs = """
@@ -1552,9 +1518,7 @@ def optimize_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(
-                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
-                )
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
 
         if response.stop_reason == "end_turn":
             if verbose:

@@ -254,9 +254,7 @@ def plot_waterfall(
 
     colors = ["#2ecc71" if d > 0 else "#e74c3c" for d in deltas]
 
-    bars = ax.bar(
-        range(len(deltas)), deltas, color=colors, edgecolor="#2c3e50", linewidth=0.5
-    )
+    bars = ax.bar(range(len(deltas)), deltas, color=colors, edgecolor="#2c3e50", linewidth=0.5)
 
     # Value labels on bars
     for bar, delta in zip(bars, deltas):
@@ -328,9 +326,7 @@ def plot_timeline(
                 "timestamp_s": str(ev.timestamp),
                 "event_type": ev.event_type,
                 "status": ev.status,
-                "us_per_eval": str(ev.us_per_eval)
-                if ev.us_per_eval is not None
-                else "",
+                "us_per_eval": str(ev.us_per_eval) if ev.us_per_eval is not None else "",
             }
             for ev in source.optimization_log
         ]
@@ -421,10 +417,7 @@ def print_summary(source: str | Path | CompilationResult) -> str:
     prev_us = baseline
     for rec in kept:
         delta = prev_us - rec.us_per_eval
-        lines.append(
-            f"  [{rec.code_hash}] {rec.us_per_eval:.3f} us/eval "
-            f"(delta: {delta:+.3f}, {rec.description})"
-        )
+        lines.append(f"  [{rec.code_hash}] {rec.us_per_eval:.3f} us/eval (delta: {delta:+.3f}, {rec.description})")
         prev_us = rec.us_per_eval
 
     summary = "\n".join(lines)

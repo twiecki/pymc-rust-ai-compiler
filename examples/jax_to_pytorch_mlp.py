@@ -57,9 +57,7 @@ def main():
         model = result.get_model({k: np.asarray(v) for k, v in params.items()})
         pt_out = model(torch.tensor(np.asarray(x)))
         print(f"\nPyTorch output:\n{pt_out.detach().numpy()}")
-        print(
-            f"Max diff: {np.max(np.abs(pt_out.detach().numpy() - np.asarray(out))):.2e}"
-        )
+        print(f"Max diff: {np.max(np.abs(pt_out.detach().numpy() - np.asarray(out))):.2e}")
     else:
         print(f"\nTranspilation failed: {result.validation_errors}")
 

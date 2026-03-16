@@ -49,8 +49,7 @@ def _build_shared_lib(build_dir: Path) -> Path:
 
     if not so_path.exists():
         raise RuntimeError(
-            f"Shared library not found at {so_path}. "
-            'Ensure Cargo.toml has [lib] crate-type = ["cdylib"]'
+            f'Shared library not found at {so_path}. Ensure Cargo.toml has [lib] crate-type = ["cdylib"]'
         )
     return so_path
 
@@ -124,9 +123,7 @@ def to_nutpie(
     ip = model.initial_point()
     from pymc.blocking import DictToArrayBijection
 
-    x0 = DictToArrayBijection.map(
-        {v.name: ip[v.name] for v in model_fn._grad_vars}
-    ).data
+    x0 = DictToArrayBijection.map({v.name: ip[v.name] for v in model_fn._grad_vars}).data
     n_dim = len(x0)
 
     # Get variable names, shapes, dtypes from the model
@@ -165,9 +162,7 @@ def to_nutpie(
 
     def make_initial_point(seed):
         ip_ = model.initial_point()
-        return DictToArrayBijection.map(
-            {v.name: ip_[v.name] for v in model_fn._grad_vars}
-        ).data.astype(np.float64)
+        return DictToArrayBijection.map({v.name: ip_[v.name] for v in model_fn._grad_vars}).data.astype(np.float64)
 
     return from_pyfunc(
         ndim=n_dim,

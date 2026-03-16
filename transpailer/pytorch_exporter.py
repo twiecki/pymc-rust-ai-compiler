@@ -82,11 +82,7 @@ class PytorchModelExporter:
         elif isinstance(self.sample_input, (tuple, list)):
             for i, val in enumerate(self.sample_input):
                 t = torch.as_tensor(val)
-                name = (
-                    self.input_names[i]
-                    if self.input_names and i < len(self.input_names)
-                    else f"x_{i}"
-                )
+                name = self.input_names[i] if self.input_names and i < len(self.input_names) else f"x_{i}"
                 input_infos.append(
                     TensorInfo(
                         name=name,
@@ -162,9 +158,7 @@ class PytorchModelExporter:
         import torch
 
         if isinstance(inp, dict):
-            return module(
-                **{k: torch.as_tensor(v, dtype=torch.float32) for k, v in inp.items()}
-            )
+            return module(**{k: torch.as_tensor(v, dtype=torch.float32) for k, v in inp.items()})
         elif isinstance(inp, (tuple, list)):
             return module(*[torch.as_tensor(v, dtype=torch.float32) for v in inp])
         else:
@@ -205,9 +199,7 @@ class PytorchModelExporter:
 
         if isinstance(inp, dict):
             return {
-                k: np.asarray(v).tolist()
-                if not isinstance(v, torch.Tensor)
-                else v.detach().cpu().numpy().tolist()
+                k: np.asarray(v).tolist() if not isinstance(v, torch.Tensor) else v.detach().cpu().numpy().tolist()
                 for k, v in inp.items()
             }
         elif isinstance(inp, (tuple, list)):

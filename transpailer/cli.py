@@ -9,7 +9,6 @@ from pathlib import Path
 
 import click
 
-
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
 # Mapping from (source, target) pairs to relevant skill files
@@ -69,8 +68,7 @@ def _detect_framework(code: str, filename: str) -> str:
                 return framework
 
     raise click.UsageError(
-        f"Cannot auto-detect source framework for '{filename}'. "
-        "Use --from to specify it explicitly."
+        f"Cannot auto-detect source framework for '{filename}'. Use --from to specify it explicitly."
     )
 
 
@@ -127,16 +125,12 @@ def _transpile(
     if skills:
         system += f"\n\n# Domain knowledge\n\n{skills}"
 
-    user_msg = (
-        f"Transpile the following {source} code to {target}.\n\n"
-        f"```\n{code}\n```"
-    )
+    user_msg = f"Transpile the following {source} code to {target}.\n\n```\n{code}\n```"
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise click.ClickException(
-            "ANTHROPIC_API_KEY environment variable is required. "
-            "Set it with: export ANTHROPIC_API_KEY=sk-..."
+            "ANTHROPIC_API_KEY environment variable is required. Set it with: export ANTHROPIC_API_KEY=sk-..."
         )
 
     client = anthropic.Anthropic(api_key=api_key)
@@ -230,8 +224,7 @@ def convert(
         filename = "stdin"
     else:
         raise click.UsageError(
-            "No input file provided and no data on stdin. "
-            "Usage: transpailer convert <file> --to <framework>"
+            "No input file provided and no data on stdin. Usage: transpailer convert <file> --to <framework>"
         )
 
     target = _normalize_framework(target)

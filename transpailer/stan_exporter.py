@@ -68,10 +68,7 @@ class StanModelContext:
                     "logp": self.initial_point.logp,
                     "dlogp": self.initial_point.dlogp,
                 },
-                "extra_points": [
-                    {"point": p.point, "logp": p.logp, "dlogp": p.dlogp}
-                    for p in self.extra_points
-                ],
+                "extra_points": [{"point": p.point, "logp": p.logp, "dlogp": p.dlogp} for p in self.extra_points],
             },
         }
 
@@ -177,9 +174,7 @@ class StanModelExporter:
             unc_param_names=list(unc_param_names),
             n_params=n_unconstrained,
             n_params_constrained=n_constrained,
-            data_json=json.dumps(self._data)
-            if isinstance(self._data, dict)
-            else self._data,
+            data_json=json.dumps(self._data) if isinstance(self._data, dict) else self._data,
             data_summary=data_summary,
             initial_point=initial,
             extra_points=extra_points,
@@ -243,8 +238,7 @@ class StanModelExporter:
                 range_str = f"[{mn:.3f}, {mx:.3f}]" if mn is not None else "unknown"
                 mean_str = f"{mean:.3f}" if mean is not None else "unknown"
                 parts.append(
-                    f"- `{name.upper()}_DATA: &[f64]` — shape={shape}, n={n}, "
-                    f"range={range_str}, mean={mean_str}"
+                    f"- `{name.upper()}_DATA: &[f64]` — shape={shape}, n={n}, range={range_str}, mean={mean_str}"
                 )
                 parts.append(f"  `{name.upper()}_N: usize = {n}`")
 
@@ -253,17 +247,13 @@ class StanModelExporter:
                 for name, value in self._data.items():
                     arr = np.asarray(value)
                     if arr.ndim == 0 and np.issubdtype(arr.dtype, np.integer):
-                        parts.append(
-                            f"- `{name.upper()}: usize = {int(arr)}`  (scalar integer)"
-                        )
+                        parts.append(f"- `{name.upper()}: usize = {int(arr)}`  (scalar integer)")
 
         parts.append("")
 
         # Validation
         parts.append("## Validation")
-        parts.append(
-            "Your generated code MUST produce these exact values (within float64 precision):\n"
-        )
+        parts.append("Your generated code MUST produce these exact values (within float64 precision):\n")
         parts.append(
             "NOTE: BridgeStan computes log_density with jacobian=True, propto=True.\n"
             "This means the log density INCLUDES Jacobian adjustments for constrained parameters\n"
@@ -324,9 +314,7 @@ mod tests {
         assert_close(logp, {vp.logp:.10f}, 1e-6, "logp");""")
 
             for i, g in enumerate(vp.dlogp):
-                tests.append(
-                    f'        assert_close(gradient[{i}], {g:.10e}, 1e-4, "grad[{i}]");'
-                )
+                tests.append(f'        assert_close(gradient[{i}], {g:.10e}, 1e-4, "grad[{i}]");')
             tests.append("    }\n")
 
         tests.append("}\n")

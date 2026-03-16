@@ -173,8 +173,7 @@ TOOLS = [
     {
         "name": "cargo_build",
         "description": (
-            "Build the Rust project with `cargo build --release`. "
-            "Returns build output including any compiler errors."
+            "Build the Rust project with `cargo build --release`. Returns build output including any compiler errors."
         ),
         "input_schema": {
             "type": "object",
@@ -431,9 +430,7 @@ def compile_stan_model(
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
             if verbose:
-                print(
-                    f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens"
-                )
+                print(f"  Turn {turn}: {response.usage.input_tokens} in / {response.usage.output_tokens} out tokens")
 
         if response.stop_reason == "end_turn":
             if verbose:
@@ -479,9 +476,7 @@ def compile_stan_model(
 
     validation_errors = []
     if not state.validated:
-        validation_errors.append(
-            f"Agent did not achieve validation after {state.tool_calls} tool calls"
-        )
+        validation_errors.append(f"Agent did not achieve validation after {state.tool_calls} tool calls")
 
     return StanCompilationResult(
         rust_code=rust_code,
@@ -570,9 +565,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     if not binary.exists():
         return "Error: validation binary not found. Run cargo_build first."
 
-    all_points = [("initial", ctx.initial_point)] + [
-        (f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)
-    ]
+    all_points = [("initial", ctx.initial_point)] + [(f"extra_{i}", p) for i, p in enumerate(ctx.extra_points)]
 
     input_lines = []
     for name, vp in all_points:
@@ -597,9 +590,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     output_lines = [line for line in result.stdout.strip().split("\n") if line]
 
     if len(output_lines) != len(all_points):
-        return (
-            f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
-        )
+        return f"Error: expected {len(all_points)} output lines, got {len(output_lines)}"
 
     parsed = []
     for output_line in output_lines:
@@ -623,13 +614,11 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
         rel_err = abs(rust_logp - vp.logp) / max(abs(vp.logp), 1.0)
         status = "OK" if rel_err <= 1e-4 else "MISMATCH"
         report_lines.append(
-            f"{name}: logp BridgeStan={vp.logp:.10f} Rust={rust_logp:.10f} "
-            f"rel_err={rel_err:.2e} [{status}]"
+            f"{name}: logp BridgeStan={vp.logp:.10f} Rust={rust_logp:.10f} rel_err={rel_err:.2e} [{status}]"
         )
         if rel_err > 1e-4:
             errors.append(
-                f"{name}: logp mismatch: BridgeStan={vp.logp:.10f}, "
-                f"Rust={rust_logp:.10f}, rel_err={rel_err:.2e}"
+                f"{name}: logp mismatch: BridgeStan={vp.logp:.10f}, Rust={rust_logp:.10f}, rel_err={rel_err:.2e}"
             )
 
         # Gradient comparison
@@ -658,10 +647,7 @@ def _tool_validate_logp(state: _AgentState, verbose: bool) -> str:
     else:
         if verbose:
             print(f"  [validate_logp] FAILED ({len(errors)} errors)")
-        return (
-            f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\n"
-            f"Errors:\n" + "\n".join(errors)
-        )
+        return f"VALIDATION FAILED ({len(errors)} errors):\n\n{report}\n\nErrors:\n" + "\n".join(errors)
 
 
 def _tool_read_file(
@@ -780,9 +766,7 @@ def _generate_data_rs(data: dict | None) -> str:
             # Also export shape info for multi-dimensional arrays
             if arr.ndim > 1:
                 for dim_i, dim_size in enumerate(arr.shape):
-                    lines.append(
-                        f"pub const {name.upper()}_DIM{dim_i}: usize = {dim_size};"
-                    )
+                    lines.append(f"pub const {name.upper()}_DIM{dim_i}: usize = {dim_size};")
                 lines.append("")
 
     return "\n".join(lines)
@@ -840,9 +824,7 @@ path = "src/bench.rs"
     (src_dir / "lib.rs").write_text(lib_rs)
 
     # Placeholder generated.rs
-    (src_dir / "generated.rs").write_text(
-        "// Placeholder — will be overwritten by the agent\n"
-    )
+    (src_dir / "generated.rs").write_text("// Placeholder — will be overwritten by the agent\n")
 
     # Validation binary
     validate_rs = """

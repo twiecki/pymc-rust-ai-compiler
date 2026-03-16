@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-
 # ── Rust Project Setup Tests ─────────────────────────────────────────────────
 
 
@@ -24,6 +23,7 @@ class TestRustProjectSetup:
     def simple_context(self):
         import torch
         import torch.nn as nn
+
         from transpailer.pytorch_exporter import PytorchModelExporter
 
         class Linear(nn.Module):
@@ -31,9 +31,7 @@ class TestRustProjectSetup:
                 super().__init__()
                 self.fc = nn.Linear(2, 3)
                 with torch.no_grad():
-                    self.fc.weight.copy_(
-                        torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
-                    )
+                    self.fc.weight.copy_(torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]))
                     self.fc.bias.copy_(torch.tensor([0.1, 0.2, 0.3]))
 
             def forward(self, x):
@@ -93,6 +91,7 @@ class TestTranspilerTools:
     def agent_state(self):
         import torch
         import torch.nn as nn
+
         from transpailer.pytorch_exporter import PytorchModelExporter
         from transpailer.pytorch_rust_transpiler import (
             _AgentState,
@@ -102,9 +101,7 @@ class TestTranspilerTools:
         class Linear(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(
-                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-                )
+                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -198,14 +195,13 @@ class TestValidation:
         """Create a simple model context for testing validation."""
         import torch
         import torch.nn as nn
+
         from transpailer.pytorch_exporter import PytorchModelExporter
 
         class Simple(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(
-                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-                )
+                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -260,6 +256,7 @@ class TestFullPipeline:
     def model_and_state(self):
         import torch
         import torch.nn as nn
+
         from transpailer.pytorch_exporter import PytorchModelExporter
         from transpailer.pytorch_rust_transpiler import (
             _AgentState,
@@ -269,9 +266,7 @@ class TestFullPipeline:
         class Simple(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.w = nn.Parameter(
-                    torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32)
-                )
+                self.w = nn.Parameter(torch.tensor([[1.0, 2.0], [3.0, 4.0]], dtype=torch.float32))
                 self.b = nn.Parameter(torch.tensor([0.1, 0.2], dtype=torch.float32))
 
             def forward(self, x):
@@ -295,9 +290,9 @@ class TestFullPipeline:
     def test_correct_rust_validates(self, model_and_state):
         """Write manually correct Rust code and verify it passes validation."""
         from transpailer.pytorch_rust_transpiler import (
-            _tool_write_code,
             _tool_cargo_build,
             _tool_validate,
+            _tool_write_code,
         )
 
         try:
@@ -394,11 +389,7 @@ class TestSkills:
         from transpailer.pytorch_rust_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_rust")
-        assert (
-            "backward" in skill.lower()
-            or "backprop" in skill.lower()
-            or "gradient" in skill.lower()
-        )
+        assert "backward" in skill.lower() or "backprop" in skill.lower() or "gradient" in skill.lower()
 
 
 # ── Result Type Tests ────────────────────────────────────────────────────────
@@ -454,6 +445,7 @@ class TestPromptBuilding:
 
     def test_prompt_contains_model_info(self):
         import torch.nn as nn
+
         from transpailer.pytorch_exporter import PytorchModelExporter
         from transpailer.pytorch_rust_transpiler import _build_user_prompt
 

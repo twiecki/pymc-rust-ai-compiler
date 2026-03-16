@@ -106,9 +106,7 @@ def make_zerosumnormal_model():
     raw_day = np.array([-0.2, -0.1, 0.0, 0.05, 0.15, 0.35, 0.25])
     raw_day += np.random.normal(0, 0.05, n_days)
     true_day_effect = raw_day - raw_day.mean()
-    raw_interaction = np.random.normal(
-        0, true_sigma_cat, (n_stores, n_days, n_categories)
-    )
+    raw_interaction = np.random.normal(0, true_sigma_cat, (n_stores, n_days, n_categories))
     raw_interaction -= raw_interaction.mean(axis=-1, keepdims=True)
     raw_interaction -= raw_interaction.mean(axis=-2, keepdims=True)
 
@@ -118,12 +116,7 @@ def make_zerosumnormal_model():
         for d in range(n_days):
             for c in range(n_categories):
                 n = np.random.poisson(5) + 1
-                mu = (
-                    true_grand_mean
-                    + true_store_effect[s]
-                    + true_day_effect[d]
-                    + raw_interaction[s, d, c]
-                )
+                mu = true_grand_mean + true_store_effect[s] + true_day_effect[d] + raw_interaction[s, d, c]
                 y_vals = np.random.normal(mu, true_sigma_y, n)
                 for y in y_vals:
                     records.append((s, d, c, y))
@@ -140,9 +133,7 @@ def make_zerosumnormal_model():
         sigma_store = pm.HalfNormal("sigma_store", sigma=2)
         sigma_day = pm.HalfNormal("sigma_day", sigma=2)
         sigma_cat = pm.HalfNormal("sigma_cat", sigma=2)
-        store_effect = pm.ZeroSumNormal(
-            "store_effect", sigma=sigma_store, shape=n_stores
-        )
+        store_effect = pm.ZeroSumNormal("store_effect", sigma=sigma_store, shape=n_stores)
         day_effect = pm.ZeroSumNormal("day_effect", sigma=sigma_day, shape=n_days)
         interaction = pm.ZeroSumNormal(
             "interaction",
@@ -150,12 +141,7 @@ def make_zerosumnormal_model():
             shape=(n_stores, n_days, n_categories),
             n_zerosum_axes=2,
         )
-        mu_y = (
-            grand_mean
-            + store_effect[store_idx]
-            + day_effect[day_idx]
-            + interaction[store_idx, day_idx, cat_idx]
-        )
+        mu_y = grand_mean + store_effect[store_idx] + day_effect[day_idx] + interaction[store_idx, day_idx, cat_idx]
         sigma_y = pm.HalfNormal("sigma_y", sigma=5)
         pm.Normal("y", mu=mu_y, sigma=sigma_y, observed=y_obs)
     return (

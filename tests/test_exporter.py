@@ -15,7 +15,6 @@ from transpailer.exporter import (
     export_model,
 )
 
-
 # ---------------------------------------------------------------------------
 # ParamInfo dataclass
 # ---------------------------------------------------------------------------
@@ -198,9 +197,7 @@ class TestExporterNormalModel:
         ctx2 = RustModelExporter(normal_model, seed=2).context
 
         # At least one extra point should differ
-        assert any(
-            p1.point != p2.point for p1, p2 in zip(ctx1.extra_points, ctx2.extra_points)
-        )
+        assert any(p1.point != p2.point for p1, p2 in zip(ctx1.extra_points, ctx2.extra_points))
 
 
 class TestExporterLinregModel:
@@ -230,11 +227,7 @@ class TestExporterHierarchicalModel:
         ctx = exporter.context
 
         # Should detect the group index array
-        index_covariates = {
-            name: info
-            for name, info in ctx.covariate_data.items()
-            if info.get("is_index_array")
-        }
+        index_covariates = {name: info for name, info in ctx.covariate_data.items() if info.get("is_index_array")}
         assert len(index_covariates) >= 1
 
         # Check the index array properties
