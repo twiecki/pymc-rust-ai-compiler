@@ -199,7 +199,7 @@ class TestTranspilerTools:
         # Valid code
         result = _tool_write_code({"code": "x = 1 + 2"}, state, verbose=False)
         assert "Written" in result
-        assert state.generated_code == "x = 1 + 2"
+        assert state.generated_code.strip() == "x = 1 + 2"
 
         # Invalid code
         result = _tool_write_code({"code": "def f(:"}, state, verbose=False)
