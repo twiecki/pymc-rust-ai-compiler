@@ -522,6 +522,97 @@ constructs:
 - Use `pm.ZeroInflatedPoisson`, `pm.Hurdle*`, etc. for mixture-type likelihoods
 - Only fall back to `pm.Potential` when there is no clean distribution equivalent
 
+## Critical Anti-Pattern: Never Use pm.Flat + pm.Potential for Standard Distributions
+
+**This is the #1 source of poor sampling performance in transpiled models.**
+
+Benchmarks show that models using `pm.Flat` priors with manual `pm.Potential` log-probability
+terms are dramatically slower and sometimes fail to converge, compared to using proper PyMC
+distributions. This is because:
+
+1. **Potentials break prior/posterior predictive sampling** — `pm.sample_prior_predictive()`
+   and `pm.sample_posterior_predictive()` ignore Potentials entirely
+2. **Potentials bypass PyMC's automatic transform handling** — proper distributions get
+   automatic Jacobian corrections and domain-appropriate transforms
+3. **Manual logp formulas are error-prone** — missing normalizing terms, wrong signs, or
+   omitted Jacobians can cause divergences
+
+### Rule 1: ALWAYS use proper distributions for Stan priors
+
+When Stan has an explicit prior like `mu ~ normal(0, 1000)`, translate it directly to the
+corresponding PyMC distribution. **NEVER** use `pm.Flat` + `pm.Potential`.
+
+```stan
+// Stan
+real mu;
+real<lower=0> sigmasq;
+vector[N] b;
+mu ~ normal(0, 1000);
+sigmasq ~ inv_gamma(0.001, 0.001);
+b ~ normal(mu, sigma);
+```
+```python
+# WRONG — causes divergences and slow sampling
+mu = pm.Flat("mu")
+sigmasq = pm.HalfFlat("sigmasq")
+b = pm.Flat("b", shape=N)
+pm.Potential("mu_prior", -0.5 * (mu / 1000)**2)
+pm.Potential("sigmasq_prior", (0.001 - 1) * pt.log(sigmasq) - 0.001 / sigmasq)
+pm.Potential("b_prior", pt.sum(-0.5 * ((b - mu) / sigma)**2))
+
+# CORRECT — clean, fast, works with predictive sampling
+mu = pm.Normal("mu", mu=0, sigma=1000)
+sigmasq = pm.InverseGamma("sigmasq", alpha=0.001, beta=0.001)
+b = pm.Normal("b", mu=mu, sigma=sigma, shape=N)
+```
+
+### Rule 2: ALWAYS use observed distributions for Stan likelihoods
+
+When Stan has a sampling statement for observed data like `y ~ normal(mu, sigma)`, use
+`pm.Distribution(..., observed=y_data)`. **NEVER** compute the logp manually as a Potential.
+
+```stan
+// Stan
+y ~ normal(mu, sigma);
+r ~ binomial_logit(n, b);
+```
+```python
+# WRONG — manual logp computation
+lik_logp = pt.sum(r * b - n * pt.log1p(pt.exp(b)))
+pm.Potential("likelihood", lik_logp)
+
+# CORRECT — proper distributions with observed data
+pm.Normal("y", mu=mu, sigma=sigma, observed=y_data)
+pm.Binomial("r_obs", n=n, logit_p=b, observed=r)
+```
+
+### Rule 3: Use pm.Dirichlet for simplex, pm.LKJCholeskyCov for correlations
+
+```stan
+// Stan
+simplex[K] theta;
+cholesky_factor_corr[2] L_Omega;
+L_Omega ~ lkj_corr_cholesky(4);
+```
+```python
+# WRONG — manual ILR transform with Jacobians
+theta_raw = pm.Flat("theta_raw")
+theta = custom_simplex_transform(theta_raw)
+pm.Potential("theta_jacobian", manual_jacobian_computation)
+
+# CORRECT — PyMC handles transforms automatically
+theta = pm.Dirichlet("theta", a=np.ones(K))
+L_cov = pm.LKJCholeskyCov("L_cov", eta=4, n=2, sd_dist=pm.Exponential.dist(0.1))
+```
+
+### When pm.Potential IS appropriate
+
+Only use `pm.Potential` for:
+- **Custom constraint terms** that have no distribution equivalent (e.g., stationarity constraints)
+- **Forward algorithm likelihoods** in HMMs (no PyMC HMM primitive)
+- **Multiple density terms on one parameter** (Stan's multiple `~` statements)
+- **Jacobian corrections** for manual parameter transforms with dependent bounds
+
 ## Coords and Dims: Named Dimensions for All Parameters
 
 **Always set up `coords` and `dims` when translating Stan models.** This is idiomatic PyMC

@@ -2,8 +2,8 @@
 
 Usage:
     import pymc as pm
-    from transpailer import compile_model
-    from transpailer.nutpie_bridge import to_nutpie
+    from transalchemy import compile_model
+    from transalchemy.nutpie_bridge import to_nutpie
 
     with pm.Model() as model:
         ...
@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import pymc as pm
 
-from transpailer.compiler import CompilationResult
+from transalchemy.compiler import CompilationResult
 
 
 def _build_shared_lib(build_dir: Path) -> Path:

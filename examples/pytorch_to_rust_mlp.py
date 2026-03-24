@@ -7,7 +7,7 @@ The generated Rust code has zero dependencies — just raw f32 math.
 import torch
 import torch.nn as nn
 
-from transpailer import transpile_pytorch_to_rust
+from transalchemy import transpile_pytorch_to_rust
 
 
 # Define a simple MLP

@@ -1,4 +1,4 @@
-"""CLI for the Transpailer — AI-powered transpilation between computational frameworks."""
+"""CLI for the Transalchemy — AI-powered transpilation between computational frameworks."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def _load_skills(source: str, target: str) -> str:
 
 
 _SYSTEM_PROMPT = """\
-You are the Transpailer — an expert AI that transpiles code between computational \
+You are the Transalchemy — an expert AI that transpiles code between computational \
 frameworks. You produce clean, idiomatic code in the target framework that is \
 functionally equivalent to the input.
 
@@ -165,9 +165,9 @@ def _transpile(
 
 
 @click.group()
-@click.version_option(package_name="transpailer")
+@click.version_option(package_name="transalchemy")
 def cli():
-    """Transpailer: AI-powered transpilation between computational frameworks."""
+    """Transalchemy: AI-powered transpilation between computational frameworks."""
 
 
 @cli.command()
@@ -210,10 +210,10 @@ def convert(
 
     \b
     Examples:
-      transpailer convert model.stan --to pymc
-      transpailer convert train.py --to jax
-      transpailer convert model.py --to pytorch
-      cat model.stan | transpailer convert --to pymc
+      transalchemy convert model.stan --to pymc
+      transalchemy convert train.py --to jax
+      transalchemy convert model.py --to pytorch
+      cat model.stan | transalchemy convert --to pymc
     """
     # Read input
     if input_file:
@@ -224,7 +224,7 @@ def convert(
         filename = "stdin"
     else:
         raise click.UsageError(
-            "No input file provided and no data on stdin. Usage: transpailer convert <file> --to <framework>"
+            "No input file provided and no data on stdin. Usage: transalchemy convert <file> --to <framework>"
         )
 
     target = _normalize_framework(target)

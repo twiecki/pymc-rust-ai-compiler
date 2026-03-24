@@ -1,7 +1,7 @@
 [project]
-name = "transpailer"
+name = "transalchemy"
 version = "0.1.0"
-description = "The Transpailer: an AI agent that transpiles between any computational framework via LLM"
+description = "The Transalchemy: an AI agent that transpiles between any computational framework via LLM"
 authors = [{name = "Thomas Wiecki", email = "thomas.wiecki@pymc-labs.com"}]
 requires-python = ">= 3.11"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "bridgestan>=2.7.0",
     "torch>=2.10.0",
     "click>=8.0",
+    "cmdstanpy>=1.3.0",
 ]
 
 [project.optional-dependencies]
@@ -23,14 +24,14 @@ torch = ["torch>=2.0"]
 dl = ["jax>=0.4", "jaxlib>=0.4", "torch>=2.0"]
 
 [project.scripts]
-transpailer = "transpailer.cli:cli"
+transalchemy = "transalchemy.cli:cli"
 
 [build-system]
 build-backend = "hatchling.build"
 requires = ["hatchling"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["transpailer"]
+packages = ["transalchemy"]
 
 [dependency-groups]
 dev = [

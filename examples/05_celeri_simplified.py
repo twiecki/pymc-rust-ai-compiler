@@ -34,7 +34,7 @@ PyMC model:
 import numpy as np
 import pymc as pm
 
-from transpailer import compile_model
+from transalchemy import compile_model
 
 # --- Synthetic tectonic data ---
 np.random.seed(42)

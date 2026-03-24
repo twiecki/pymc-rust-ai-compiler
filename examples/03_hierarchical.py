@@ -19,7 +19,7 @@ PyMC model:
 import numpy as np
 import pymc as pm
 
-from transpailer import compile_model
+from transalchemy import compile_model
 
 # Generate synthetic hierarchical data
 np.random.seed(42)
@@ -77,7 +77,7 @@ result = compile_model(
 if result.success:
     print(f"\nCompilation successful in {result.n_attempts} attempt(s)!")
     print("\nNow you can benchmark:")
-    print("  python -c 'from transpailer.benchmark import *; ...'")
+    print("  python -c 'from transalchemy.benchmark import *; ...'")
 else:
     print(f"\nCompilation FAILED after {result.n_attempts} attempts")
     for err in result.validation_errors[:5]:

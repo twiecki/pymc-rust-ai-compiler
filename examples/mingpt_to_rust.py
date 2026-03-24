@@ -1,4 +1,4 @@
-"""Transpile Karpathy's minGPT to Rust using transpailer.
+"""Transpile Karpathy's minGPT to Rust using transalchemy.
 
 This script:
 1. Creates a small GPT model (gpt-nano: 3 layers, 3 heads, 48 embd)
@@ -197,7 +197,7 @@ def main():
     print()
 
     # Step 3: Transpile to Rust
-    print("Step 3: Transpiling to Rust via transpailer...")
+    print("Step 3: Transpiling to Rust via transalchemy...")
     print("  (This will run an agentic Claude loop — may take a few minutes)")
     print()
 
@@ -285,7 +285,7 @@ class MinGPTCore(nn.Module):
         return logits.view(-1)
 """
 
-    from transpailer import transpile_pytorch_to_rust
+    from transalchemy import transpile_pytorch_to_rust
 
     # Use "burn" backend for optimized tensors + autodiff, or "pure" for zero-dep
     backend = sys.argv[1] if len(sys.argv) > 1 else "burn"

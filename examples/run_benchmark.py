@@ -14,8 +14,8 @@ This will:
 import numpy as np
 import pymc as pm
 
-from transpailer import compile_model
-from transpailer.benchmark import (
+from transalchemy import compile_model
+from transalchemy.benchmark import (
     benchmark_nutpie,
     benchmark_rust,
     print_comparison,

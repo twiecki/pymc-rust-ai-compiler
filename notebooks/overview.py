@@ -113,7 +113,7 @@ def _(mo):
 
 @app.cell
 def _(linreg_model):
-    from transpailer.exporter import RustModelExporter
+    from transalchemy.exporter import RustModelExporter
 
     SOURCE = """alpha ~ Normal(0, 10)
     beta ~ Normal(0, 10)
@@ -419,7 +419,7 @@ def _(mo):
     ## Architecture
 
     ```
-    transpailer/
+    transalchemy/
     ├── exporter.py      # Extract: pm.Model() → ModelContext → LLM prompt
     ├── compiler.py      # Generate + Build + Validate loop
     └── benchmark.py     # Compare: nutpie vs AI-compiled Rust
@@ -467,7 +467,7 @@ def _(mo):
     ## Try It
 
     ```python
-    from transpailer import compile_model
+    from transalchemy import compile_model
 
     result = compile_model(
         model,

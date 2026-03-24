@@ -43,7 +43,7 @@ class TestJaxExporter:
         return forward, params, x
 
     def test_extract_params(self, simple_model):
-        from transpailer.jax_exporter import JaxModelExporter
+        from transalchemy.jax_exporter import JaxModelExporter
 
         fn, params, x = simple_model
         exporter = JaxModelExporter(fn, params, x)
@@ -61,7 +61,7 @@ class TestJaxExporter:
         assert b_info.size == 2
 
     def test_extract_validation_points(self, simple_model):
-        from transpailer.jax_exporter import JaxModelExporter
+        from transalchemy.jax_exporter import JaxModelExporter
 
         fn, params, x = simple_model
         exporter = JaxModelExporter(fn, params, x, n_extra_points=2)
@@ -78,7 +78,7 @@ class TestJaxExporter:
         assert "b" in vp0.grad_params
 
     def test_forward_output_matches(self, simple_model):
-        from transpailer.jax_exporter import JaxModelExporter
+        from transalchemy.jax_exporter import JaxModelExporter
 
         fn, params, x = simple_model
         exporter = JaxModelExporter(fn, params, x)
@@ -89,7 +89,7 @@ class TestJaxExporter:
         np.testing.assert_allclose(got, expected, atol=1e-6)
 
     def test_to_dict(self, simple_model):
-        from transpailer.jax_exporter import JaxModelExporter
+        from transalchemy.jax_exporter import JaxModelExporter
 
         fn, params, x = simple_model
         exporter = JaxModelExporter(fn, params, x)
@@ -127,7 +127,7 @@ class TestPytorchExporter:
         return model, x
 
     def test_extract_params(self, simple_model):
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         model, x = simple_model
         exporter = PytorchModelExporter(model, x)
@@ -141,7 +141,7 @@ class TestPytorchExporter:
         assert weight_info.size == 6
 
     def test_extract_validation_points(self, simple_model):
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         model, x = simple_model
         exporter = PytorchModelExporter(model, x, n_extra_points=2)
@@ -158,7 +158,7 @@ class TestPytorchExporter:
     def test_forward_output_matches(self, simple_model):
         import torch
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         model, x = simple_model
         exporter = PytorchModelExporter(model, x)
@@ -177,8 +177,8 @@ class TestTranspilerTools:
     """Test the transpiler's tool execution logic without API calls."""
 
     def test_write_code_syntax_check(self):
-        from transpailer.jax_exporter import ModelContext
-        from transpailer.jax_pytorch_transpiler import (
+        from transalchemy.jax_exporter import ModelContext
+        from transalchemy.jax_pytorch_transpiler import (
             _AgentState,
             _tool_write_code,
         )
@@ -206,8 +206,8 @@ class TestTranspilerTools:
         assert "Syntax error" in result
 
     def test_validate_no_code(self):
-        from transpailer.jax_exporter import ModelContext
-        from transpailer.jax_pytorch_transpiler import (
+        from transalchemy.jax_exporter import ModelContext
+        from transalchemy.jax_pytorch_transpiler import (
             _AgentState,
             _tool_validate,
         )
@@ -233,8 +233,8 @@ class TestTranspilerTools:
         """Test that validation passes for a correctly transpiled model."""
         import jax.numpy as jnp
 
-        from transpailer.jax_exporter import JaxModelExporter
-        from transpailer.jax_pytorch_transpiler import (
+        from transalchemy.jax_exporter import JaxModelExporter
+        from transalchemy.jax_pytorch_transpiler import (
             _AgentState,
             _tool_validate,
             _tool_write_code,
@@ -289,12 +289,12 @@ def make_model(params):
         import torch
         import torch.nn as nn
 
-        from transpailer.jax_pytorch_transpiler import (
+        from transalchemy.jax_pytorch_transpiler import (
             _AgentState,
             _tool_validate,
             _tool_write_code,
         )
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         # Create a simple PyTorch model
         class Linear(nn.Module):
@@ -344,14 +344,14 @@ class TestSkills:
     """Test that skill files load correctly."""
 
     def test_jax_to_pytorch_skill_exists(self):
-        from transpailer.jax_pytorch_transpiler import _load_skill
+        from transalchemy.jax_pytorch_transpiler import _load_skill
 
         skill = _load_skill("jax_to_pytorch")
         assert len(skill) > 0
         assert "PyTorch" in skill
 
     def test_pytorch_to_jax_skill_exists(self):
-        from transpailer.jax_pytorch_transpiler import _load_skill
+        from transalchemy.jax_pytorch_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_jax")
         assert len(skill) > 0
