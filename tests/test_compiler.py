@@ -1,4 +1,4 @@
-"""Tests for transpailer.compiler."""
+"""Tests for transalchemy.compiler."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from transpailer.compiler import (
+from transalchemy.compiler import (
     CompilationResult,
     _AgentState,
     _execute_tool,
@@ -15,7 +15,7 @@ from transpailer.compiler import (
     _tool_read_file,
     _tool_write_rust_code,
 )
-from transpailer.exporter import (
+from transalchemy.exporter import (
     RustModelExporter,
 )
 
@@ -402,7 +402,7 @@ class TestExecuteTool:
 
 class TestToolDefinitions:
     def test_tools_list_has_five_tools(self):
-        from transpailer.compiler import TOOLS
+        from transalchemy.compiler import TOOLS
 
         assert len(TOOLS) == 5
         tool_names = {t["name"] for t in TOOLS}
@@ -415,7 +415,7 @@ class TestToolDefinitions:
         }
 
     def test_system_prompt_exists(self):
-        from transpailer.compiler import SYSTEM_PROMPT
+        from transalchemy.compiler import SYSTEM_PROMPT
 
         assert len(SYSTEM_PROMPT) > 100
         assert "CpuLogpFunc" in SYSTEM_PROMPT

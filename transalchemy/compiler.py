@@ -26,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pymc as pm
 
-from transpailer.exporter import RustModelExporter
+from transalchemy.exporter import RustModelExporter
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 

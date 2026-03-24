@@ -24,7 +24,7 @@ class TestRustProjectSetup:
         import torch
         import torch.nn as nn
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         class Linear(nn.Module):
             def __init__(self):
@@ -43,7 +43,7 @@ class TestRustProjectSetup:
         return exporter.context
 
     def test_creates_project_structure(self, simple_context):
-        from transpailer.pytorch_rust_transpiler import _setup_rust_project
+        from transalchemy.pytorch_rust_transpiler import _setup_rust_project
 
         with tempfile.TemporaryDirectory() as tmpdir:
             build_path = Path(tmpdir)
@@ -55,7 +55,7 @@ class TestRustProjectSetup:
             assert (build_path / "src" / "generated.rs").exists()
 
     def test_data_rs_contains_params(self, simple_context):
-        from transpailer.pytorch_rust_transpiler import _setup_rust_project
+        from transalchemy.pytorch_rust_transpiler import _setup_rust_project
 
         with tempfile.TemporaryDirectory() as tmpdir:
             build_path = Path(tmpdir)
@@ -70,7 +70,7 @@ class TestRustProjectSetup:
             assert "FC_BIAS_SHAPE" in data_rs
 
     def test_cargo_toml_valid(self, simple_context):
-        from transpailer.pytorch_rust_transpiler import _setup_rust_project
+        from transalchemy.pytorch_rust_transpiler import _setup_rust_project
 
         with tempfile.TemporaryDirectory() as tmpdir:
             build_path = Path(tmpdir)
@@ -92,8 +92,8 @@ class TestTranspilerTools:
         import torch
         import torch.nn as nn
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
-        from transpailer.pytorch_rust_transpiler import (
+        from transalchemy.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_rust_transpiler import (
             _AgentState,
             _setup_rust_project,
         )
@@ -123,7 +123,7 @@ class TestTranspilerTools:
         return state
 
     def test_write_code(self, agent_state):
-        from transpailer.pytorch_rust_transpiler import _tool_write_code
+        from transalchemy.pytorch_rust_transpiler import _tool_write_code
 
         result = _tool_write_code(
             {
@@ -139,33 +139,33 @@ class TestTranspilerTools:
         assert "forward" in gen
 
     def test_write_code_empty(self, agent_state):
-        from transpailer.pytorch_rust_transpiler import _tool_write_code
+        from transalchemy.pytorch_rust_transpiler import _tool_write_code
 
         result = _tool_write_code({"code": ""}, agent_state, verbose=False)
         assert "Error" in result
 
     def test_read_source(self, agent_state):
-        from transpailer.pytorch_rust_transpiler import _tool_read_source
+        from transalchemy.pytorch_rust_transpiler import _tool_read_source
 
         result = _tool_read_source(agent_state, verbose=False)
         # Should return some source code or indication
         assert len(result) > 0
 
     def test_read_file(self, agent_state):
-        from transpailer.pytorch_rust_transpiler import _tool_read_file
+        from transalchemy.pytorch_rust_transpiler import _tool_read_file
 
         result = _tool_read_file({"path": "src/data.rs"}, agent_state, verbose=False)
         assert "W" in result or "WEIGHT" in result or "f32" in result
 
     def test_read_file_not_found(self, agent_state):
-        from transpailer.pytorch_rust_transpiler import _tool_read_file
+        from transalchemy.pytorch_rust_transpiler import _tool_read_file
 
         result = _tool_read_file({"path": "nonexistent.rs"}, agent_state, verbose=False)
         assert "not found" in result.lower() or "Available" in result
 
     def test_cargo_build_placeholder(self, agent_state):
         """Test that the placeholder generated.rs compiles."""
-        from transpailer.pytorch_rust_transpiler import _tool_cargo_build
+        from transalchemy.pytorch_rust_transpiler import _tool_cargo_build
 
         # Check if cargo is available
         try:
@@ -178,7 +178,7 @@ class TestTranspilerTools:
 
     def test_validate_no_binary(self, agent_state):
         """Test validation when binary doesn't exist."""
-        from transpailer.pytorch_rust_transpiler import _tool_validate
+        from transalchemy.pytorch_rust_transpiler import _tool_validate
 
         result = _tool_validate(agent_state, verbose=False)
         assert "not found" in result.lower() or "Error" in result
@@ -196,7 +196,7 @@ class TestValidation:
         import torch
         import torch.nn as nn
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_exporter import PytorchModelExporter
 
         class Simple(nn.Module):
             def __init__(self):
@@ -257,8 +257,8 @@ class TestFullPipeline:
         import torch
         import torch.nn as nn
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
-        from transpailer.pytorch_rust_transpiler import (
+        from transalchemy.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_rust_transpiler import (
             _AgentState,
             _setup_rust_project,
         )
@@ -289,7 +289,7 @@ class TestFullPipeline:
 
     def test_correct_rust_validates(self, model_and_state):
         """Write manually correct Rust code and verify it passes validation."""
-        from transpailer.pytorch_rust_transpiler import (
+        from transalchemy.pytorch_rust_transpiler import (
             _tool_cargo_build,
             _tool_validate,
             _tool_write_code,
@@ -371,7 +371,7 @@ class TestSkills:
     """Test that the PyTorch→Rust skill file loads correctly."""
 
     def test_pytorch_to_rust_skill_exists(self):
-        from transpailer.pytorch_rust_transpiler import _load_skill
+        from transalchemy.pytorch_rust_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_rust")
         assert len(skill) > 0
@@ -379,14 +379,14 @@ class TestSkills:
         assert "PyTorch" in skill
 
     def test_skill_has_matmul_example(self):
-        from transpailer.pytorch_rust_transpiler import _load_skill
+        from transalchemy.pytorch_rust_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_rust")
         assert "linear" in skill.lower()
         assert "relu" in skill.lower()
 
     def test_skill_has_backprop(self):
-        from transpailer.pytorch_rust_transpiler import _load_skill
+        from transalchemy.pytorch_rust_transpiler import _load_skill
 
         skill = _load_skill("pytorch_to_rust")
         assert "backward" in skill.lower() or "backprop" in skill.lower() or "gradient" in skill.lower()
@@ -399,7 +399,7 @@ class TestRustTranspileResult:
     """Test the result dataclass."""
 
     def test_success_property(self):
-        from transpailer.pytorch_rust_transpiler import RustTranspileResult
+        from transalchemy.pytorch_rust_transpiler import RustTranspileResult
 
         result = RustTranspileResult(
             generated_code="fn forward() {}",
@@ -411,7 +411,7 @@ class TestRustTranspileResult:
         assert result.success is True
 
     def test_failure_property(self):
-        from transpailer.pytorch_rust_transpiler import RustTranspileResult
+        from transalchemy.pytorch_rust_transpiler import RustTranspileResult
 
         result = RustTranspileResult(
             generated_code="",
@@ -423,7 +423,7 @@ class TestRustTranspileResult:
         assert result.success is False
 
     def test_save(self, tmp_path):
-        from transpailer.pytorch_rust_transpiler import RustTranspileResult
+        from transalchemy.pytorch_rust_transpiler import RustTranspileResult
 
         result = RustTranspileResult(
             generated_code="pub fn forward() -> Vec<f32> { vec![] }",
@@ -446,8 +446,8 @@ class TestPromptBuilding:
     def test_prompt_contains_model_info(self):
         import torch.nn as nn
 
-        from transpailer.pytorch_exporter import PytorchModelExporter
-        from transpailer.pytorch_rust_transpiler import _build_user_prompt
+        from transalchemy.pytorch_exporter import PytorchModelExporter
+        from transalchemy.pytorch_rust_transpiler import _build_user_prompt
 
         class Model(nn.Module):
             def __init__(self):

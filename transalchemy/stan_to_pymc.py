@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from transpailer.formatting import format_python_code as _format_python
+from transalchemy.formatting import format_python_code as _format_python
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
@@ -294,7 +294,7 @@ def transpile_stan_to_pymc(
     if verbose:
         print("Extracting reference values via BridgeStan...")
     t0 = time.time()
-    from transpailer.stan_exporter import StanModelExporter
+    from transalchemy.stan_exporter import StanModelExporter
 
     exporter = StanModelExporter(stan_code, data=data)
     ctx = exporter.context

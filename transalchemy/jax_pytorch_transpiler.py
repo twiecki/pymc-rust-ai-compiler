@@ -18,8 +18,8 @@ from typing import Any, Callable
 
 import numpy as np
 
-from transpailer.formatting import format_python_code as _format_python
-from transpailer.jax_exporter import ModelContext
+from transalchemy.formatting import format_python_code as _format_python
+from transalchemy.jax_exporter import ModelContext
 
 _SKILLS_DIR = Path(__file__).parent / "skills"
 
@@ -717,7 +717,7 @@ def transpile_jax_to_pytorch(
     Returns:
         TranspileResult with generated PyTorch code and validation status.
     """
-    from transpailer.jax_exporter import JaxModelExporter
+    from transalchemy.jax_exporter import JaxModelExporter
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -810,7 +810,7 @@ def transpile_pytorch_to_jax(
     Returns:
         TranspileResult with generated JAX code and validation status.
     """
-    from transpailer.pytorch_exporter import PytorchModelExporter
+    from transalchemy.pytorch_exporter import PytorchModelExporter
 
     api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:

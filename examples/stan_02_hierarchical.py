@@ -3,7 +3,7 @@
 Classic Eight Schools example — non-centered parameterization.
 """
 
-from transpailer import compile_stan_model
+from transalchemy import compile_stan_model
 
 STAN_CODE = """
 data {

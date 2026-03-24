@@ -1,4 +1,4 @@
-"""Tests for transpailer.exporter."""
+"""Tests for transalchemy.exporter."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from transpailer.exporter import (
+from transalchemy.exporter import (
     ParamInfo,
     RustModelExporter,
     ValidationPoint,
